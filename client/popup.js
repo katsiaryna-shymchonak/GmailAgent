@@ -28,7 +28,8 @@ function formatEmailView(email) {
   }
   if (email.from || email.date) {
     out += `<div style='color:${secondary};font-size:0.95em; margin-bottom:0.2em;'>`;
-    if (email.from) out += `From: <span style='color:${accentLight};'>${escapeHtml(email.from)}</span>`;
+    if (email.from)
+      out += `From: <span style='color:${accentLight};'>${escapeHtml(email.from)}</span>`;
     if (email.from && email.date) out += ' &nbsp; | &nbsp; ';
     if (email.date) out += `<span>${escapeHtml(email.date)}</span>`;
     out += `</div>`;
@@ -66,7 +67,10 @@ function applyTheme(theme) {
 function initializeTheme() {
   let theme = localStorage.getItem('gmail_agent_theme');
   if (!theme) {
-    theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    theme =
+      window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark';
   }
   applyTheme(theme);
   themeBtn.setAttribute('aria-label', `Switch to ${theme === 'light' ? 'dark' : 'light'} mode`);
@@ -88,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadSenders() {
   senderListEl.textContent = 'Loading senders...';
   setListLoading(true);
-  chrome.runtime.sendMessage({ action: 'listSenders', maxResults: 100 }, resp => {
+  chrome.runtime.sendMessage({ action: 'listSenders', maxResults: 100 }, (resp) => {
     setListLoading(false);
     if (!resp || resp.error) {
       senderListEl.textContent = resp?.error || 'Failed to load senders.';
@@ -104,7 +108,7 @@ function renderSenders(senders) {
     return;
   }
   const wrap = document.createElement('div');
-  senders.forEach(s => {
+  senders.forEach((s) => {
     const row = document.createElement('div');
     row.className = 'sender-item';
     const left = document.createElement('div');
@@ -129,19 +133,24 @@ function renderSenders(senders) {
 }
 
 function selectSender(rowEl, fromValue) {
-  Array.from(senderListEl.querySelectorAll('.sender-item')).forEach(r => r.classList.remove('active'));
+  Array.from(senderListEl.querySelectorAll('.sender-item')).forEach((r) =>
+    r.classList.remove('active')
+  );
   rowEl.classList.add('active');
   activeSenderKey = fromValue;
   emailListEl.textContent = 'Loading messages...';
   selectedIds.clear();
   updateControlsState();
-  chrome.runtime.sendMessage({ action: 'searchMessagesBySender', sender: parseSenderEmail(fromValue), maxResults: 20 }, resp => {
-    if (!resp || resp.error) {
-      emailListEl.textContent = resp?.error || 'Failed to load messages.';
-      return;
+  chrome.runtime.sendMessage(
+    { action: 'searchMessagesBySender', sender: parseSenderEmail(fromValue), maxResults: 20 },
+    (resp) => {
+      if (!resp || resp.error) {
+        emailListEl.textContent = resp?.error || 'Failed to load messages.';
+        return;
+      }
+      renderList(resp.messages || []);
     }
-    renderList(resp.messages || []);
-  });
+  );
 }
 
 function renderList(messages) {
@@ -174,7 +183,7 @@ function renderList(messages) {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'email-checkbox';
-    cb.addEventListener('click', e => {
+    cb.addEventListener('click', (e) => {
       e.stopPropagation();
       if (cb.checked) selectedIds.add(m.id);
       else selectedIds.delete(m.id);
@@ -236,7 +245,7 @@ function updateControlsState() {
 
 function previewMessage(id) {
   detailPanel.textContent = 'Loading message...';
-  chrome.runtime.sendMessage({ action: 'getMessageById', id }, resp => {
+  chrome.runtime.sendMessage({ action: 'getMessageById', id }, (resp) => {
     if (!resp || resp.error) {
       detailPanel.textContent = resp?.error || 'Failed to load message.';
       return;
@@ -258,5 +267,7 @@ function parseSenderName(from) {
 }
 
 sendToAiBtn.addEventListener('click', () => {
-  alert(`Sending ${selectedIds.size} selected email(s) to AI from ${parseSenderEmail(activeSenderKey)}...`);
+  alert(
+    `Sending ${selectedIds.size} selected email(s) to AI from ${parseSenderEmail(activeSenderKey)}...`
+  );
 });

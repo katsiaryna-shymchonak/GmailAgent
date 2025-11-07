@@ -7,13 +7,7 @@ import prettier from 'eslint-config-prettier';
 
 export default [
   {
-    ignores: [
-      'node_modules/',
-      '**/dist/**',
-      '**/.github/**',
-      '**/build/**',
-      'eslint.config.js'
-    ]
+    ignores: ['node_modules/', '**/dist/**', '**/.github/**', '**/build/**', 'eslint.config.js'],
   },
   js.configs.recommended,
   {
@@ -22,23 +16,23 @@ export default [
       sourceType: 'script',
       globals: {
         ...globals.browser,
-        chrome: 'readonly'
-      }
+        chrome: 'readonly',
+      },
     },
     plugins: {
       import: pluginImport,
       n: pluginN,
-      promise: pluginPromise
+      promise: pluginPromise,
     },
     rules: {
       'no-unused-vars': [
         'warn',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' }
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
       ],
       'no-console': 'off',
       'import/no-unresolved': 'off',
-      'n/no-missing-import': 'off'
-    }
+      'n/no-missing-import': 'off',
+    },
   },
-  prettier
+  prettier,
 ];

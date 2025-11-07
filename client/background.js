@@ -3,7 +3,7 @@ console.log('[GMAIL-AGENT] Background service worker loaded!');
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[GMAIL-AGENT] onMessage fired!', request);
   if (request.action === 'getMessage') {
-    chrome.identity.getAuthToken({ interactive: true }, token => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (chrome.runtime.lastError) {
         console.error('[Auth] Authorization error:', chrome.runtime.lastError);
         sendResponse({ snippet: 'Authorization error: ' + chrome.runtime.lastError.message });
@@ -18,11 +18,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
       console.log('[Gmail API] Requesting message list:', listUrl);
       fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => {
+        .then((res) => {
           console.log('[Gmail API] Response status for message list:', res.status);
           return res.json();
         })
-        .then(data => {
+        .then((data) => {
           console.log('[Gmail API] Message list response:', data);
           const messageId = data.messages?.[0]?.id;
           if (!messageId) {
@@ -33,16 +33,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log('[Gmail API] Requesting specific message:', messageUrl);
           return fetch(messageUrl, { headers: { Authorization: `Bearer ${token}` } });
         })
-        .then(res => {
+        .then((res) => {
           console.log('[Gmail API] Message response status:', res.status);
           return res.json();
         })
-        .then(message => {
+        .then((message) => {
           console.log('[Gmail API] Message received (raw):', JSON.stringify(message, null, 2));
           const text = extractPlainText(message);
           sendResponse({ snippet: text });
         })
-        .catch(err => {
+        .catch((err) => {
           console.error('[Gmail API] Error while getting message:', err);
           sendResponse({ snippet: 'Error while getting message: ' + err.message });
         });
@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'searchMessagesBySender') {
-    chrome.identity.getAuthToken({ interactive: true }, async token => {
+    chrome.identity.getAuthToken({ interactive: true }, async (token) => {
       if (chrome.runtime.lastError) {
         sendResponse({ error: chrome.runtime.lastError.message });
         return;
@@ -67,13 +67,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log('[Gmail API] Search by sender URL:', listUrl);
         const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
         const listData = await listRes.json();
-        const ids = (listData.messages || []).map(m => m.id);
+        const ids = (listData.messages || []).map((m) => m.id);
         if (ids.length === 0) {
           sendResponse({ messages: [] });
           return;
         }
         const summaries = await Promise.all(
-          ids.map(async id => {
+          ids.map(async (id) => {
             const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`;
             const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
             const msg = await res.json();
@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               subject: extractHeader(headers, 'Subject'),
               from: extractHeader(headers, 'From'),
               date: extractHeader(headers, 'Date'),
-              snippet: msg.snippet || ''
+              snippet: msg.snippet || '',
             };
           })
         );
@@ -97,7 +97,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getMessageById') {
-    chrome.identity.getAuthToken({ interactive: true }, async token => {
+    chrome.identity.getAuthToken({ interactive: true }, async (token) => {
       if (chrome.runtime.lastError) {
         sendResponse({ error: chrome.runtime.lastError.message });
         return;
@@ -122,7 +122,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'listSenders') {
-    chrome.identity.getAuthToken({ interactive: true }, async token => {
+    chrome.identity.getAuthToken({ interactive: true }, async (token) => {
       if (chrome.runtime.lastError) {
         sendResponse({ error: chrome.runtime.lastError.message });
         return;
@@ -142,20 +142,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
         const listData = await listRes.json();
-        const ids = (listData.messages || []).map(m => m.id);
+        const ids = (listData.messages || []).map((m) => m.id);
         if (ids.length === 0) {
           sendResponse({ senders: [] });
           return;
         }
 
         const metaUrls = ids.map(
-          id =>
+          (id) =>
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From`
         );
-        const metaFetches = metaUrls.map(url =>
+        const metaFetches = metaUrls.map((url) =>
           fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-            .then(async res => ({ ok: res.ok, status: res.status, json: await res.json() }))
-            .catch(err => ({ ok: false, status: 0, error: String(err) }))
+            .then(async (res) => ({ ok: res.ok, status: res.status, json: await res.json() }))
+            .catch((err) => ({ ok: false, status: 0, error: String(err) }))
         );
         const metaResults = await Promise.all(metaFetches);
 
@@ -184,7 +184,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 function decodeBase64Url(str) {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/').padEnd(str.length + (4 - str.length % 4) % 4, '=');
+  const base64 = str
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(str.length + ((4 - (str.length % 4)) % 4), '=');
   try {
     return decodeURIComponent(escape(atob(base64)));
   } catch (e) {
@@ -194,7 +197,7 @@ function decodeBase64Url(str) {
 
 function extractHeader(headers, name) {
   if (!headers || !Array.isArray(headers)) return '';
-  const found = headers.find(h => h.name && h.name.toLowerCase() === name.toLowerCase());
+  const found = headers.find((h) => h.name && h.name.toLowerCase() === name.toLowerCase());
   return found ? found.value : '';
 }
 

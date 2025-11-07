@@ -1,20 +1,17 @@
 {
-    "manifest_version": 3,
-    "name": "Gmail Reader",
-    "version": "1.0",
-    "description": "Analyses messages from Gmail",
-    "permissions": ["identity", "storage"],
-    "action": {
-      "default_popup": "client/popup.html"
-    },
-    "background": {
-      "service_worker": "client/background.js"
-    },
-    "oauth2": {
-      "client_id": "739930632604-maugqeb9q032vujskhga5cu2ka4cvvl4.apps.googleusercontent.com",
-      "scopes": [
-        "https://www.googleapis.com/auth/gmail.readonly"
-      ]
-    }    
+  "manifest_version": 3,
+  "name": "Gmail Reader",
+  "version": "1.0",
+  "description": "Analyses messages from Gmail",
+  "permissions": ["identity", "storage"],
+  "action": {
+    "default_popup": "client/popup.html"
+  },
+  "background": {
+    "service_worker": "client/background.js"
+  },
+  "oauth2": {
+    "client_id": "739930632604-maugqeb9q032vujskhga5cu2ka4cvvl4.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
   }
-  
+}
