@@ -1,0 +1,30 @@
+# Node / frontend
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# Build / dist
+**/dist/
+**/build/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python / backend
+*.pyc
+__pycache__/
+.venv/
+.env
+.env.*
+*.sqlite3
+
+# Coverage / reports
+coverage/
+*.coverage
+*.log
+
+# Other
+*.swp
