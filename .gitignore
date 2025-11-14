@@ -17,7 +17,7 @@ Thumbs.db
 *.pyc
 __pycache__/
 .venv/
-.env
+server/.env
 .env.*
 *.sqlite3
 

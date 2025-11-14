@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8" />
@@ -32,235 +32,122 @@
         margin: 0;
         padding: 0;
         min-width: 360px;
-        min-height: 460px;
+        min-height: 600px;
         display: flex;
         align-items: center;
         justify-content: center;
       }
-      .card {
-        background: var(--card-bg);
-        box-shadow: var(--card-shadow);
-        border-radius: var(--radius);
-        padding: 1.2rem 1.1rem 1rem 1.1rem;
-        max-width: 380px;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.88rem;
-      }
-      .header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.25em;
-      }
-      h2 {
-        margin: 0;
-        font-size: 1.2rem;
-        letter-spacing: 0.04em;
-        font-weight: 700;
-        color: var(--accent-light);
-        text-align: left;
-        flex: 1;
-      }
-      #theme-toggle {
-        cursor: pointer;
-        background: none;
-        border: none;
-        font-size: 1.36em;
-        line-height: 1;
-        margin-left: 0.2em;
-        color: var(--accent-light);
-        transition: color 0.17s;
-      }
-      #theme-toggle:hover,
-      #theme-toggle:focus {
-        color: var(--accent);
-      }
+      .card { background: var(--card-bg); box-shadow: var(--card-shadow); border-radius: var(--radius); padding: 1.2rem 1.1rem 1rem 1.1rem; max-width: 420px; width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 0.88rem; }
+      .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25em; }
+      h2 { margin: 0; font-size: 1.2rem; letter-spacing: 0.04em; font-weight: 700; color: var(--accent-light); text-align: left; flex: 1; }
+      #theme-toggle { cursor: pointer; background: none; border: none; font-size: 1.36em; line-height: 1; margin-left: 0.2em; color: var(--accent-light); transition: color 0.17s; }
+      #theme-toggle:hover, #theme-toggle:focus { color: var(--accent); }
+      .agent-tip { font-size: 0.88em; color: var(--text-secondary); background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6em 0.8em; line-height: 1.5; }
+      body.light .agent-tip { background: rgba(0,0,0,0.05); }
+      .secondary-btn { border: none; border-radius: 8px; padding: 0.45em 0.9em; font-size: 0.9em; background: rgba(255,255,255,0.08); color: var(--text-main); cursor: pointer; align-self: flex-start; }
+      body.light .secondary-btn { background: rgba(0,0,0,0.08); color: var(--text-main); }
+      .secondary-btn:hover { background: rgba(255,255,255,0.18); }
 
-      #sender-list {
-        background: var(--card-bg);
-        border-radius: 9px;
-        box-shadow: 0 1px 3px 0 #0003;
-        overflow-y: auto;
-        max-height: 130px;
-        padding: 0.3em 0.2em;
-      }
-      .sender-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 0.6em;
-        padding: 0.5em 0.6em;
-        border-radius: 7px;
-        cursor: pointer;
-        color: var(--text-main);
-        transition: background 0.12s;
-      }
-      .sender-item:hover,
-      .sender-item.active {
-        background: #2a313a;
-      }
-      body.light .sender-item:hover,
-      body.light .sender-item.active {
-        background: #e7f0ff;
-      }
-      .sender-name {
-        font-weight: 600;
-        color: var(--accent-light);
-      }
-      .sender-email {
-        font-size: 0.9em;
-        color: var(--text-secondary);
-      }
-      .sender-count {
-        font-size: 0.85em;
-        color: var(--text-secondary);
-      }
+      #sender-list { background: var(--card-bg); border-radius: 9px; box-shadow: 0 1px 3px 0 #0003; overflow-y: auto; max-height: 130px; padding: 0.3em 0.2em; }
+      .sender-item { display: flex; justify-content: space-between; align-items: center; gap: 0.6em; padding: 0.5em 0.6em; border-radius: 7px; cursor: pointer; color: var(--text-main); transition: background 0.12s; }
+      .sender-item:hover, .sender-item.active { background: #2a313a; }
+      body.light .sender-item:hover, body.light .sender-item.active { background: #e7f0ff; }
+      .sender-name { font-weight: 600; color: var(--accent-light); }
+      .sender-email { font-size: 0.9em; color: var(--text-secondary); }
+      .sender-count { font-size: 0.85em; color: var(--text-secondary); }
 
-      #email-list {
-        background: var(--card-bg);
-        border-radius: 9px;
-        box-shadow: 0 1px 3px 0 #0003;
-        margin-bottom: 0.3rem;
-        overflow-y: auto;
-        max-height: 205px;
-        padding: 0.2em 0.1em;
-        display: flex;
-        flex-direction: column;
-        gap: 0.1em;
-      }
-      .email-list-header {
-        display: flex;
-        align-items: center;
-        gap: 0.45em;
-        padding: 0.4em 0.6em;
-        color: var(--text-secondary);
-        position: sticky;
-        top: 0;
-        background: var(--card-bg);
-        z-index: 1;
-      }
-      #select-all {
-        accent-color: var(--accent);
-      }
-      .email-list-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.7em;
-        border-radius: 6px;
-        padding: 0.52em 0.7em 0.38em 0.3em;
-        margin-bottom: 0.09em;
-        cursor: pointer;
-        transition:
-          background 0.13s,
-          box-shadow 0.13s;
-      }
-      .email-list-item.selected,
-      .email-list-item:hover {
-        background: var(--accent-light);
-        color: #fff;
-      }
-      .email-checkbox {
-        margin-top: 0.35em;
-        accent-color: var(--accent);
-      }
-      .email-list-info {
-        flex: 1;
-      }
-      .email-list-subject {
-        font-weight: 610;
-        font-size: 1em;
-        color: var(--accent-light);
-        margin-bottom: 0.13em;
-      }
-      .email-list-meta {
-        font-size: 0.85em;
-        color: var(--text-secondary);
-        margin-bottom: 0.07em;
-      }
-      .email-list-snippet {
-        font-size: 0.95em;
-        color: var(--text-main);
-      }
+      #email-list { background: var(--card-bg); border-radius: 9px; box-shadow: 0 1px 3px 0 #0003; margin-bottom: 0.3rem; overflow-y: auto; max-height: 205px; padding: 0.2em 0.1em; display: flex; flex-direction: column; gap: 0.1em; }
+      .email-list-header { display: flex; align-items: center; gap: 0.45em; padding: 0.4em 0.6em; color: var(--text-secondary); position: sticky; top: 0; background: var(--card-bg); z-index: 1; }
+      #select-all { accent-color: var(--accent); }
+      .email-list-item { display: flex; align-items: flex-start; gap: 0.7em; border-radius: 6px; padding: 0.52em 0.7em 0.38em 0.3em; margin-bottom: 0.09em; cursor: pointer; transition: background 0.13s, box-shadow 0.13s; }
+      .email-list-item.selected, .email-list-item:hover { background: var(--accent-light); color: #fff; }
+      .email-checkbox { margin-top: 0.35em; accent-color: var(--accent); }
+      .email-list-info { flex: 1; }
+      .email-list-subject { font-weight: 610; font-size: 1em; color: var(--accent-light); margin-bottom: 0.13em; }
+      .email-list-meta { font-size: 0.85em; color: var(--text-secondary); margin-bottom: 0.07em; }
+      .email-list-snippet { font-size: 0.95em; color: var(--text-main); }
 
-      #detail-panel {
-        margin-top: 0.2rem;
-        background: var(--bg);
-        color: var(--text-main);
-        border-radius: 8px;
-        padding: 0.9em 0.6em 0.7em 0.8em;
-        min-height: 54px;
-        font-size: 1.04em;
-        box-shadow: 0 1px 4px 0 #0002;
-        word-break: break-word;
-      }
-      body.light #detail-panel {
-        background: #f3f8ff;
-        color: var(--text-main);
-      }
+      #detail-panel { margin-top: 0.2rem; background: var(--bg); color: var(--text-main); border-radius: 8px; padding: 0.9em 0.6em 0.7em 0.8em; min-height: 54px; font-size: 1.04em; box-shadow: 0 1px 4px 0 #0002; word-break: break-word; }
+      body.light #detail-panel { background: #f3f8ff; color: var(--text-main); }
 
-      #send-to-ai {
-        width: fit-content;
-        align-self: flex-end;
-        margin-top: 0.15em;
-        margin-bottom: 0.04em;
-        background: var(--accent);
-        color: #fff;
-        padding: 0.58em 1.08em;
-        font-size: 1em;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      #send-to-ai:disabled {
-        background: #778aa4;
-        cursor: not-allowed;
-      }
+      #send-to-ai { width: fit-content; align-self: flex-end; margin-top: 0.15em; margin-bottom: 0.04em; background: var(--accent); color: #fff; padding: 0.58em 1.08em; font-size: 1em; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+      #send-to-ai:disabled { background: #778AA4; cursor: not-allowed; }
 
-      #spinner {
-        display: none;
-        margin: 0 auto;
-        margin-bottom: -14px;
-        margin-top: -8px;
-      }
-      .loader {
-        border: 2.5px solid #4550c7;
-        border-top: 2.5px solid #bcd2f7;
-        border-radius: 50%;
-        width: 26px;
-        height: 26px;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
+      #conversation-panel { background: #1f242d; border-radius: 12px; padding: 0.8em 0.9em; box-shadow: 0 1px 4px #0003; display: flex; flex-direction: column; gap: 0.6em; }
+      body.light #conversation-panel { background: #eef4ff; box-shadow: 0 1px 4px #b9c7e466; }
+      #conversation-toggle { cursor: pointer; border: none; background: transparent; color: var(--accent-light); display: flex; justify-content: space-between; font-weight: 600; font-size: 1em; }
+      #conversation-body { display: none; flex-direction: column; gap: 0.7em; animation: fadeIn 0.2s ease-in; }
+      #conversation-log { max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.15); border-radius: 8px; padding: 0.6em; font-size: 0.92em; line-height: 1.4; }
+      body.light #conversation-log { background: rgba(255,255,255,0.65); }
+      .conversation-entry { margin-bottom: 0.6em; }
+      .conversation-entry strong { color: var(--accent-light); }
+      #insights-panel { display: flex; flex-direction: column; gap: 0.7em; margin-top: 0.6em; }
+      .insight-card { border-radius: 10px; background: rgba(0,0,0,0.15); padding: 0.6em 0.8em; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+      body.light .insight-card { background: rgba(255,255,255,0.8); box-shadow: inset 0 0 0 1px rgba(50,70,120,0.08); }
+      .insight-card header { font-weight: 600; margin-bottom: 0.35em; color: var(--accent-light); }
+      .insight-body { font-size: 0.9em; line-height: 1.5; color: var(--text-secondary); }
+      .chip { display: inline-block; padding: 0.15em 0.5em; border-radius: 999px; margin: 0.1em; font-size: 0.75em; background: rgba(255,255,255,0.15); color: var(--text-main); }
+      body.light .chip { background: rgba(90,120,180,0.15); color: var(--text-main); }
+      .insight-item { margin-bottom: 0.6em; }
+      .insight-list { list-style: none; padding-left: 0; margin: 0.2em 0; }
+      .insight-list li { margin-bottom: 0.35em; }
+      .template-block { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 0.5em 0.6em; margin-bottom: 0.5em; }
+      body.light .template-block { background: rgba(255,255,255,0.95); }
+      .template-block code { white-space: pre-wrap; font-family: 'Consolas','SFMono-Regular',monospace; font-size: 0.87em; display: block; margin-top: 0.25em; }
+      .muted { opacity: 0.75; font-size: 0.85em; }
+      #conversation-input { width: 100%; padding: 0.55em 0.7em; border-radius: 8px; border: 1px solid rgba(120,120,120,0.45); background: rgba(0,0,0,0.2); color: var(--text-main); }
+      body.light #conversation-input { background: white; border-color: rgba(73,100,140,0.35); }
+      #conversation-send { align-self: flex-end; padding: 0.55em 1em; border-radius: 8px; border: none; background: var(--accent); color: white; font-weight: 600; cursor: pointer; }
+      #spinner { display: none; margin: 0 auto; margin-bottom: -14px; margin-top: -8px; }
+      .loader { border: 2.5px solid #4550c7; border-top: 2.5px solid #bcd2f7; border-radius: 50%; width: 26px; height: 26px; animation: spin 1s linear infinite; }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
     </style>
   </head>
   <body>
     <main class="card" role="main">
       <div class="header-row">
         <h2>📧 Latest Gmail Messages</h2>
-        <button
-          id="theme-toggle"
-          title="Toggle light/dark mode"
-          aria-label="Toggle light or dark mode"
-        >
-          🌙
-        </button>
+        <button id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle light or dark mode">🌙</button>
       </div>
+      <div class="agent-tip" id="agent-tip">
+        Агент умеет: фильтровать письма, управлять рассылками, находить задачи и дедлайны, генерировать автоответы, формировать недельные отчёты.
+      </div>
+      <button id="weekly-summary-btn" class="secondary-btn">🗓️ Weekly summary</button>
       <div id="sender-list">Loading senders...</div>
-      <div id="email-list">Select a sender to load messages.</div>
+      <div id="email-list">
+        Select a sender to load messages.
+      </div>
       <button id="send-to-ai" disabled>Send Selected to AI</button>
       <div id="spinner"><div class="loader"></div></div>
       <div id="detail-panel">Select an email to preview...</div>
+
+      <section id="conversation-panel">
+        <button id="conversation-toggle" aria-expanded="false">
+          Chat with AI Agent
+          <span id="conversation-toggle-icon">▼</span>
+        </button>
+        <div id="conversation-body">
+          <div id="conversation-log"></div>
+          <div id="insights-panel">
+            <section class="insight-card" id="filter-insight">
+              <header>Фильтрация и теги</header>
+              <div class="insight-body" id="filter-content">Нет данных.</div>
+            </section>
+            <section class="insight-card" id="newsletter-insight">
+              <header>Рассылки и отчёт</header>
+              <div class="insight-body" id="newsletter-content">Нет данных.</div>
+              <div class="insight-body" id="weekly-report">Ещё нет отчёта.</div>
+            </section>
+            <section class="insight-card" id="reply-insight">
+              <header>Автоответы</header>
+              <div class="insight-body" id="auto-reply-content">Нет шаблонов.</div>
+            </section>
+          </div>
+          <textarea id="conversation-input" rows="3" placeholder="Ask follow-up questions about the analysis..."></textarea>
+          <button id="conversation-send" disabled>Send</button>
+        </div>
+      </section>
     </main>
     <script src="./popup.js"></script>
   </body>

@@ -181,6 +181,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (request.action === 'getWeeklyMessages') {
+    chrome.identity.getAuthToken({ interactive: true }, async (token) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+        return;
+      }
+      if (!token) {
+        sendResponse({ error: 'No auth token' });
+        return;
+      }
+      try {
+        // Calculate date 7 days ago in YYYY/MM/DD format
+        const date = new Date();
+        date.setDate(date.getDate() - 7);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const afterDate = `${year}/${month}/${day}`;
+        
+        const maxResults = Number(request.maxResults || 500);
+        const query = encodeURIComponent(`after:${afterDate}`);
+        const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&q=${query}`;
+        console.log('[Gmail API] Weekly messages URL:', listUrl);
+        
+        const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!listRes.ok) {
+          const txt = await listRes.text();
+          sendResponse({ error: `Weekly fetch failed: ${listRes.status} ${txt}` });
+          return;
+        }
+        const listData = await listRes.json();
+        const ids = (listData.messages || []).map((m) => m.id);
+        
+        if (ids.length === 0) {
+          sendResponse({ messages: [] });
+          return;
+        }
+
+        // Fetch full message details in parallel
+        const messagePromises = ids.map(async (id) => {
+          try {
+            const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`;
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) {
+              console.warn(`[Gmail API] Failed to fetch message ${id}: ${res.status}`);
+              return null;
+            }
+            const msg = await res.json();
+            const data = extractEmailSections(msg);
+            return {
+              id: msg.id,
+              subject: data.subject || '',
+              snippet: data.snippet || '',
+              from: data.from || '',
+              body: data.body || data.snippet || '',
+            };
+          } catch (err) {
+            console.error(`[Gmail API] Error fetching message ${id}:`, err);
+            return null;
+          }
+        });
+
+        const messages = (await Promise.all(messagePromises)).filter((m) => m !== null);
+        console.log(`[Gmail API] Fetched ${messages.length} messages from past week`);
+        sendResponse({ messages });
+      } catch (e) {
+        console.error('[Gmail API] getWeeklyMessages error:', e);
+        sendResponse({ error: String(e) });
+      }
+    });
+    return true;
+  }
 });
 
 function decodeBase64Url(str) {
