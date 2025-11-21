@@ -8,7 +8,8 @@
     "default_popup": "client/popup.html"
   },
   "background": {
-    "service_worker": "client/background.js"
+    "service_worker": "client/background.js",
+    "type": "module"
   },
   "oauth2": {
     "client_id": "739930632604-maugqeb9q032vujskhga5cu2ka4cvvl4.apps.googleusercontent.com",

@@ -1,11 +1,11 @@
-from __future__ import annotations
-
+"""Pydantic schemas for API requests and responses"""
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
 
 class EmailMessage(BaseModel):
+    """Email message data model"""
     id: str = Field(..., description="Gmail message identifier")
     subject: Optional[str] = None
     snippet: Optional[str] = None
@@ -17,16 +17,19 @@ class EmailMessage(BaseModel):
 
 
 class IngestRequest(BaseModel):
+    """Request model for ingesting emails"""
     items: List[EmailMessage]
 
 
 class AnalyzeRequest(BaseModel):
+    """Request model for email analysis"""
     query: str = Field(default="Summarize these emails")
     sender_email: Optional[str] = None
     messages: List[EmailMessage]
 
 
 class AnalyzeResponse(BaseModel):
+    """Response model for email analysis"""
     summary: str
     key_tasks: List[str] = Field(default_factory=list)
     deadlines: List[str] = Field(default_factory=list)
@@ -41,5 +44,7 @@ class AnalyzeResponse(BaseModel):
 
 
 class WeeklySummaryRequest(BaseModel):
+    """Request model for weekly summary generation"""
     query: str = Field(default="Сформируй недельный отчёт по почте")
     messages: List[EmailMessage] = Field(default_factory=list)
+

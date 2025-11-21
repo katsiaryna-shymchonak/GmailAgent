@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+"""Database service for PostgreSQL operations"""
 import contextlib
 from typing import Dict, Iterator, List
 
@@ -9,14 +8,16 @@ from psycopg_pool import ConnectionPool
 from psycopg.types.json import Json
 from pgvector.psycopg import register_vector, Vector
 
-from .config import get_settings
+from ..config import get_settings
 
 settings = get_settings()
 
+# Global connection pool instance
 _pool: ConnectionPool | None = None
 
 
 def get_pool() -> ConnectionPool:
+    """Get or create database connection pool"""
     global _pool
     if _pool is None:
         _pool = ConnectionPool(
@@ -30,6 +31,7 @@ def get_pool() -> ConnectionPool:
 
 @contextlib.contextmanager
 def get_connection() -> Iterator[psycopg.Connection]:
+    """Get database connection from pool with vector extension registered"""
     pool = get_pool()
     with pool.connection() as conn:
         register_vector(conn)
@@ -37,6 +39,7 @@ def get_connection() -> Iterator[psycopg.Connection]:
 
 
 def init_memory_table() -> None:
+    """Initialize email memory table with vector extension"""
     table = settings.memory_table
     sql = f"""
     CREATE EXTENSION IF NOT EXISTS vector;
@@ -63,16 +66,21 @@ def init_memory_table() -> None:
 
 
 def store_email_memory(records: List[Dict]) -> int:
+    """Store email records with embeddings in database"""
     if not records:
         return 0
 
-    from .embeddings import embed_texts  # local import to avoid cycle
+    # Local import to avoid circular dependency
+    from .embeddings import embed_texts
 
+    # Generate embeddings for email texts
     texts = [
         f"{rec.get('subject', '')} {rec.get('body') or rec.get('snippet') or ''}".strip()
         for rec in records
     ]
     embeddings = embed_texts(texts)
+    
+    # Insert or update records with embeddings
     insert_sql = f"""
     INSERT INTO {settings.memory_table}
         (id, sender_email, subject, snippet, body, email_type, priority, requires_reply, tags, metadata, embedding)
@@ -114,7 +122,10 @@ def store_email_memory(records: List[Dict]) -> int:
 
 
 def get_weekly_metrics() -> Dict:
+    """Get weekly email metrics from database"""
     table = settings.memory_table
+    
+    # Count emails by type and reply requirement
     sql_counts = f"""
     SELECT
         COUNT(*) AS total_emails,
@@ -125,6 +136,8 @@ def get_weekly_metrics() -> Dict:
     FROM {table}
     WHERE created_at >= NOW() - INTERVAL '7 days';
     """
+    
+    # Get newsletter samples
     sql_newsletters = f"""
     SELECT subject, sender_email, snippet
     FROM {table}
@@ -140,6 +153,7 @@ def get_weekly_metrics() -> Dict:
 
 
 def fetch_recent_emails(days: int = 7, limit: int = 50) -> List[Dict]:
+    """Fetch recent emails from database"""
     table = settings.memory_table
     sql = f"""
     SELECT id, sender_email AS "from", subject, snippet, body, email_type, priority,
@@ -152,3 +166,4 @@ def fetch_recent_emails(days: int = 7, limit: int = 50) -> List[Dict]:
     with get_connection() as conn:
         rows = conn.execute(sql, (limit,)).fetchall()
     return rows
+

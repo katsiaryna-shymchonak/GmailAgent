@@ -113,11 +113,19 @@
       <div class="agent-tip" id="agent-tip">
         Агент умеет: фильтровать письма, управлять рассылками, находить задачи и дедлайны, генерировать автоответы, формировать недельные отчёты.
       </div>
-      <button id="weekly-summary-btn" class="secondary-btn">🗓️ Weekly summary</button>
+      <button id="weekly-summary-btn" class="secondary-btn">🗓️ Weekly Report</button>
       <div id="sender-list">Loading senders...</div>
-      <div id="email-list">
+            <div id="email-list">
         Select a sender to load messages.
       </div>
+
+      <!-- Pagination controls for email list -->
+      <div id="email-pagination" style="display:flex; align-items:center; justify-content:center; gap:0.6rem; padding-top:0.45rem;">
+        <button id="email-prev" class="secondary-btn" title="Previous page" aria-label="Previous page">←</button>
+        <div id="email-page-indicator" class="muted">Page 1</div>
+        <button id="email-next" class="secondary-btn" title="Next page" aria-label="Next page">→</button>
+      </div>
+
       <button id="send-to-ai" disabled>Send Selected to AI</button>
       <div id="spinner"><div class="loader"></div></div>
       <div id="detail-panel">Select an email to preview...</div>
@@ -144,11 +152,11 @@
               <div class="insight-body" id="auto-reply-content">Нет шаблонов.</div>
             </section>
           </div>
-          <textarea id="conversation-input" rows="3" placeholder="Ask follow-up questions about the analysis..."></textarea>
+          <textarea id="conversation-input" rows="3" placeholder="Chat with the agent... Ask questions, request analysis, or give instructions."></textarea>
           <button id="conversation-send" disabled>Send</button>
         </div>
       </section>
     </main>
-    <script src="./popup.js"></script>
+    <script type="module" src="./popup.js"></script>
   </body>
 </html>
