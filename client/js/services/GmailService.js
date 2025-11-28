@@ -20,16 +20,13 @@ export class GmailService {
 
   static async listSenders(maxResults = 100) {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: 'listSenders', maxResults },
-        (resp) => {
-          if (!resp || resp.error) {
-            reject(new Error(resp?.error || 'Failed to load senders'));
-            return;
-          }
-          resolve(resp.senders || []);
+      chrome.runtime.sendMessage({ action: 'listSenders', maxResults }, (resp) => {
+        if (!resp || resp.error) {
+          reject(new Error(resp?.error || 'Failed to load senders'));
+          return;
         }
-      );
+        resolve(resp.senders || []);
+      });
     });
   }
 
@@ -62,17 +59,13 @@ export class GmailService {
 
   static async getWeeklyMessages(maxResults = 500) {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: 'getWeeklyMessages', maxResults },
-        (resp) => {
-          if (!resp || resp.error) {
-            reject(new Error(resp?.error || 'Failed to load weekly messages'));
-            return;
-          }
-          resolve(resp.messages || []);
+      chrome.runtime.sendMessage({ action: 'getWeeklyMessages', maxResults }, (resp) => {
+        if (!resp || resp.error) {
+          reject(new Error(resp?.error || 'Failed to load weekly messages'));
+          return;
         }
-      );
+        resolve(resp.messages || []);
+      });
     });
   }
 }
-

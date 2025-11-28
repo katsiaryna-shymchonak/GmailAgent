@@ -70,4 +70,3 @@ export class SenderList {
     return this.activeSenderKey;
   }
 }
-

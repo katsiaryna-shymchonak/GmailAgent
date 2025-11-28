@@ -1,50 +1,64 @@
-"""Content analysis tool for extracting key information"""
-import textwrap
-from typing import Any, Dict, List, Optional
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+from typing import Dict, Any, List
 from .base import BaseTool
-from .utils import format_messages
-
 
 class ContentAnalysisTool(BaseTool):
-    """Tool for analyzing email content and extracting tasks/deadlines using LangChain"""
-    name = "Анализ содержания писем"
+    name = "content_analysis"
 
-    def __init__(self, llm: Optional[ChatGoogleGenerativeAI] = None) -> None:
-        """Initialize content analysis tool with LangChain LLM"""
-        super().__init__(llm)
+    def __init__(self):
+        schema = {
+            "summary": "string",
+            "key_tasks": [{"email_id": "string", "task": "string"}],
+            "deadlines": [{"email_id": "string", "deadline": "string"}],
+            "draft_reply": {"string": "string"}  # email_id -> reply_text
+        }
+        super().__init__(schema=schema)
 
-    def run(self, *, messages: List[Dict[str, Any]], user_query: str) -> Dict[str, Any]:
-        """
-        Extract key information, tasks, deadlines, and generate summary from emails
+    async def run(
+        self,
+        messages: List[Dict[str, Any]],
+        user_query: str,
+        user_language: str = "English"
+    ) -> Dict[str, Any]:
+        prompt = (
+            f"You are an agent for email content analysis.\n"
+            f"Task: {user_query}\n\n"
+            f"Output strictly valid JSON matching the schema.\n"
+            f"Language: {user_language}\n\n"
+            f"Rules:\n"
+            f"- Summarize only actual content from provided emails.\n"
+            f"- Identify key points and extract actionable tasks only if explicit.\n"
+            f"- Extract deadlines only if explicitly present.\n"
+            f"- Return:\n"
+            f"  - summary: short overview.\n"
+            f"  - key_tasks: list of objects {{email_id, task}}.\n"
+            f"  - deadlines: list of objects {{email_id, deadline}}.\n"
+            f"  - draft_reply: dictionary of {{email_id: short_reply}}; if no per-email replies, include a single {{\"generic\": reply}}.\n\n"
+            f"Emails:\n{messages}"
+        )
 
-        Args:
-            messages: List of email message dictionaries
-            user_query: User's query or instruction
+        # Вызов модели через BaseTool.call — строго через variables
+        result = await self.call(
+            prompt,
+            variables={"query": user_query, "messages": messages},
+            user_language=user_language
+        )
 
-        Returns:
-            Dictionary with summary, key tasks, deadlines, and draft reply
-        """
-        prompt = textwrap.dedent(
-            f"""
-            Ты анализируешь письма.
-            Извлеки ключевые задачи/дедлайны, сделай summary и draft-ответ (пример: «Спасибо, отчёт будет готов к четвергу»).
-            Формат JSON:
-            {{
-              "summary": "...",
-              "key_tasks": ["..."],
-              "deadlines": ["..."],
-              "draft_reply": "...",
-              "raw": "опционально"
-            }}
+        # Defensive normalization
+        if not isinstance(result, dict):
+            result = {}
+        result.setdefault("summary", "")
+        result.setdefault("key_tasks", [])
+        result.setdefault("deadlines", [])
 
-            Запрос пользователя: {user_query or "Сформируй резюме писем."}
+        dr = result.get("draft_reply")
+        if isinstance(dr, str):
+            result["draft_reply"] = {"generic": dr}
+        elif not isinstance(dr, dict):
+            result["draft_reply"] = {"generic": (
+                "Спасибо за информацию. Ознакомлюсь и отвечу позже."
+                if user_language.lower().startswith("rus")
+                else "Thank you for the information. I will review and follow up."
+            )}
 
-            Письма:
-            {format_messages(messages)}
-            """
-        ).strip()
-        return self._call_model(prompt)
-
+        return result

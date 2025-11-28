@@ -175,7 +175,8 @@ export class GmailApiService {
     }
 
     const metaUrls = ids.map(
-      (id) => `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From`
+      (id) =>
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From`
     );
     const metaFetches = metaUrls.map((url) =>
       fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -201,4 +202,3 @@ export class GmailApiService {
       .slice(0, 100);
   }
 }
-

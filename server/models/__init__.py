@@ -4,7 +4,6 @@ from .schemas import (
     AnalyzeResponse,
     EmailMessage,
     IngestRequest,
-    WeeklySummaryRequest,
 )
 
 __all__ = [
@@ -12,6 +11,5 @@ __all__ = [
     "IngestRequest",
     "AnalyzeRequest",
     "AnalyzeResponse",
-    "WeeklySummaryRequest",
 ]
 

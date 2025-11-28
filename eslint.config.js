@@ -13,7 +13,7 @@ export default [
   {
     languageOptions: {
       ecmaVersion: 2021,
-      sourceType: 'script',
+      sourceType: 'module', // ✅ switched from 'script' to 'module'
       globals: {
         ...globals.browser,
         chrome: 'readonly',

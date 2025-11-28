@@ -1,29 +1,20 @@
-"""API routes and endpoints"""
 import logging
+import json
 from typing import Any
 
-import google.generativeai as genai
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from ..config import Settings, get_settings
-from ..core import AgentOrchestrator
-from ..models import AnalyzeRequest, AnalyzeResponse, WeeklySummaryRequest
+from ..config.settings import Settings, get_settings
+from ..core.orchestrator import AgentOrchestrator
+from ..models import AnalyzeRequest, AnalyzeResponse
 from ..services.database import init_memory_table
 
 logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """
-    Create and configure FastAPI application
-    
-    Args:
-        settings: Optional settings instance (uses default if not provided)
-        
-    Returns:
-        Configured FastAPI application instance
-    """
     settings = settings or get_settings()
 
     app = FastAPI(
@@ -31,7 +22,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=settings.debug,
     )
 
-    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -41,61 +31,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.get("/health", tags=["system"])
-    def health() -> dict[str, Any]:
-        """Health check endpoint"""
+    async def health() -> dict[str, Any]:
         return {"status": "ok"}
 
     @app.on_event("startup")
-    def _startup() -> None:
-        """Initialize database on startup"""
+    async def _startup() -> None:
         init_memory_table()
 
-    # Initialize agent orchestrator
     agent = AgentOrchestrator()
 
+    # --- основной старый эндпоинт ---
     @app.post("/analyze/emails", response_model=AnalyzeResponse, tags=["agent"])
-    def analyze(
+    async def analyze(
         payload: AnalyzeRequest, cfg: Settings = Depends(get_settings)
     ) -> AnalyzeResponse:
-        """
-        Analyze selected emails using AI agent
-        
-        Args:
-            payload: Analysis request with emails and query
-            cfg: Application settings
-            
-        Returns:
-            Analysis results with insights and recommendations
-        """
-        if not settings.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY is missing")
-        genai.configure(api_key=settings.gemini_api_key)
-        result = agent.analyze_emails(payload.messages, payload.query, payload.sender_email)
-        return AnalyzeResponse(**result)
+        try:
+            result = await agent.analyze_emails(
+                messages=payload.messages,
+                query=payload.query,
+                sender_email=payload.sender_email,
+            )
+            if isinstance(result, BaseModel):
+                result = result.dict()
+            if not isinstance(result, dict):
+                logger.error("Agent returned non-dict result: %s", type(result))
+                return AnalyzeResponse(summary="Agent error", messages=[])
 
-    @app.post("/analyze/weekly", response_model=AnalyzeResponse, tags=["agent"])
-    def analyze_weekly(
-        payload: WeeklySummaryRequest | None = None, cfg: Settings = Depends(get_settings)
-    ) -> AnalyzeResponse:
-        """
-        Generate weekly summary report
-        
-        Args:
-            payload: Weekly summary request (optional)
-            cfg: Application settings
-            
-        Returns:
-            Weekly summary report with insights
-        """
-        if not payload:
-            payload = WeeklySummaryRequest()
-        query = payload.query or "Сформируй недельный отчёт"
-        messages = payload.messages or []
-        if not settings.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY is missing")
-        genai.configure(api_key=settings.gemini_api_key)
-        result = agent.weekly_summary(query, messages)
-        return AnalyzeResponse(**result)
+            return AnalyzeResponse(**result)
+        except Exception as e:
+            logger.exception("Analysis failed: %s", e)
+            return AnalyzeResponse(
+                summary="Analysis failed",
+                messages=[{"role": "agent", "tool": "system", "content": "Sorry, analysis failed."}],
+            )
+
+    # --- новый эндпоинт: только summary ---
+    @app.post("/analyze/initial", response_model=AnalyzeResponse, tags=["agent"])
+    async def analyze_initial(payload: dict[str, Any]) -> AnalyzeResponse:
+        try:
+            result = await agent.initial_summary(
+                messages=payload.get("messages", []),
+                sender_email=payload.get("sender_email"),
+            )
+            if isinstance(result, BaseModel):
+                result = result.dict()
+
+
+            return AnalyzeResponse(**result)
+        except Exception as e:
+            logger.exception("Initial analysis failed: %s", e)
+            return AnalyzeResponse(summary="Initial analysis failed", messages=[])
+
+    # --- новый эндпоинт: follow-up ---
+    @app.post("/analyze/followup", response_model=AnalyzeResponse, tags=["agent"])
+    async def analyze_followup(payload: dict[str, Any]) -> AnalyzeResponse:
+        try:
+            result = await agent.follow_up(
+                messages=payload.get("messages", []),
+                query=payload.get("query", ""),
+                sender_email=payload.get("sender_email"),
+            )
+            if isinstance(result, BaseModel):
+                result = result.dict()
+
+
+            return AnalyzeResponse(**result)
+        except Exception as e:
+            logger.exception("Follow-up analysis failed: %s", e)
+            return AnalyzeResponse(summary="Follow-up analysis failed", messages=[])
 
     return app
-

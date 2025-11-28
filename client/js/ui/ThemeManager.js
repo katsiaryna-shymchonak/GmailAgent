@@ -8,8 +8,11 @@ export class ThemeManager {
   }
 
   init() {
-    const theme = localStorage.getItem('gmail_agent_theme') ||
-      (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    const theme =
+      localStorage.getItem('gmail_agent_theme') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark');
     this.applyTheme(theme);
     this.setupListener();
   }
@@ -36,4 +39,3 @@ export class ThemeManager {
     }
   }
 }
-

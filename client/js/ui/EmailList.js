@@ -1,5 +1,5 @@
 /**
- * Email List Manager (with pagination)
+ * Email List Manager (with pagination + page/global select)
  */
 import { FormattingUtils } from '../utils/formatting.js';
 
@@ -13,31 +13,26 @@ export class EmailList {
     this.messageDetailCache = new Map();
 
     // pagination options
-    this.pageSize = options.pageSize || 6; // items per page
+    this.pageSize = options.pageSize || 6;
     this.currentPage = 0;
     this.totalPages = 0;
 
-    // keyboard navigation
     this.setupKeyboardNavigation();
   }
 
   setupKeyboardNavigation() {
-    // Allow left/right keys to change pages when email list has focus/hover
     this.emailListEl.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft') {
-        this.prevPage();
-      } else if (e.key === 'ArrowRight') {
-        this.nextPage();
-      }
+      if (e.key === 'ArrowLeft') this.prevPage();
+      else if (e.key === 'ArrowRight') this.nextPage();
     });
-
-    // Make container focusable
     this.emailListEl.tabIndex = 0;
   }
 
   render(messages) {
     this.currentList = messages || [];
-    this.selectedIds = new Set([...this.selectedIds].filter((id) => this.currentList.some((m) => m.id === id)));
+    this.selectedIds = new Set(
+      [...this.selectedIds].filter((id) => this.currentList.some((m) => m.id === id))
+    );
     this.messageDetailCache = this.messageDetailCache || new Map();
 
     this.currentPage = 0;
@@ -57,7 +52,6 @@ export class EmailList {
       return;
     }
 
-    // Header (select all operates per current page)
     const header = this.createHeader();
     this.emailListEl.appendChild(header);
 
@@ -73,41 +67,40 @@ export class EmailList {
     });
     this.emailListEl.appendChild(container);
 
-    this.setSelectAllState(header.querySelector('#select-all'));
     this.updatePaginationControls();
   }
 
   createHeader() {
     const header = document.createElement('div');
     header.className = 'email-list-header';
-    const selectAll = document.createElement('input');
-    selectAll.type = 'checkbox';
-    selectAll.id = 'select-all';
-    selectAll.disabled = this.currentList.length === 0;
-    const label = document.createElement('label');
-    label.setAttribute('for', 'select-all');
-    label.textContent = 'Select page';
-    header.appendChild(selectAll);
-    header.appendChild(label);
 
-    selectAll.addEventListener('change', () => {
-      if (this.currentList.length === 0) return;
-      const check = selectAll.checked;
+    // --- Select page ---
+    const selectPageBtn = document.createElement('button');
+    selectPageBtn.className = 'secondary-btn';
+    selectPageBtn.textContent = 'Select page';
+    selectPageBtn.disabled = this.currentList.length === 0;
+    selectPageBtn.addEventListener('click', () => {
       const start = this.currentPage * this.pageSize;
       const end = Math.min(start + this.pageSize, this.currentList.length);
       for (let idx = start; idx < end; idx++) {
         const id = this.currentList[idx].id;
-        if (check) this.selectedIds.add(id);
-        else this.selectedIds.delete(id);
+        this.selectedIds.add(id);
       }
-      // update visible checkboxes
-      const boxes = this.emailListEl.querySelectorAll('.email-checkbox');
-      boxes.forEach((box, idx) => {
-        box.checked = check;
-      });
+      this.redrawCurrentPage();
       this.onSelectionChange?.(this.selectedIds.size);
-      this.setSelectAllState(selectAll);
     });
+    header.appendChild(selectPageBtn);
+
+    // --- Select all ---
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.className = 'secondary-btn';
+    selectAllBtn.textContent = 'Select all';
+    selectAllBtn.disabled = this.currentList.length === 0;
+    selectAllBtn.addEventListener('click', () => {
+      this.selectAllGlobal();
+      this.onSelectionChange?.(this.selectedIds.size);
+    });
+    header.appendChild(selectAllBtn);
 
     return header;
   }
@@ -126,7 +119,6 @@ export class EmailList {
       if (cb.checked) this.selectedIds.add(message.id);
       else this.selectedIds.delete(message.id);
       this.onSelectionChange?.(this.selectedIds.size);
-      this.setSelectAllState(this.emailListEl.querySelector('#select-all'));
     });
 
     const info = document.createElement('div');
@@ -149,22 +141,6 @@ export class EmailList {
     row.addEventListener('click', () => this.previewMessage(message.id));
 
     return row;
-  }
-
-  setSelectAllState(selectAllEl) {
-    if (!selectAllEl) return;
-    if (this.currentList.length === 0) {
-      selectAllEl.checked = false;
-      selectAllEl.indeterminate = false;
-      return;
-    }
-    const start = this.currentPage * this.pageSize;
-    const end = Math.min(start + this.pageSize, this.currentList.length);
-    const pageIds = this.currentList.slice(start, end).map((m) => m.id);
-    const selectedOnPage = pageIds.filter((id) => this.selectedIds.has(id)).length;
-    const total = pageIds.length;
-    selectAllEl.checked = selectedOnPage === total && total > 0;
-    selectAllEl.indeterminate = selectedOnPage > 0 && selectedOnPage < total;
   }
 
   async previewMessage(id) {
@@ -211,6 +187,12 @@ export class EmailList {
     this.onSelectionChange?.(0);
   }
 
+  // --- Global select ---
+  selectAllGlobal() {
+    this.selectedIds = new Set(this.currentList.map((m) => m.id));
+    this.redrawCurrentPage();
+  }
+
   // pagination controls
   nextPage() {
     if (this.currentPage < this.totalPages - 1) {
@@ -234,7 +216,6 @@ export class EmailList {
   }
 
   updatePaginationControls() {
-    // Update external DOM controls if they exist
     const prevBtn = document.getElementById('email-prev');
     const nextBtn = document.getElementById('email-next');
     const indicator = document.getElementById('email-page-indicator');

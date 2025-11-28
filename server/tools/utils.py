@@ -1,32 +1,40 @@
-"""Utility functions for tools"""
-import textwrap
-from typing import Any, Dict, Iterable
+from typing import Iterable, Dict
+from bs4 import BeautifulSoup
 
 
-def format_messages(messages: Iterable[Dict[str, Any]]) -> str:
+def html_to_text(html: str) -> str:
+    """Convert HTML to plain text with line breaks."""
+    if not html:
+        return ""
+    return BeautifulSoup(html, "html.parser").get_text(separator="\n")
+
+
+def format_messages(messages: Iterable[Dict]) -> str:
     """
-    Format email messages into a readable string for prompts
-
-    Args:
-        messages: Iterable of email message dictionaries
-
-    Returns:
-        Formatted string with all email details
+    Format a list of email messages into a plain text block.
+    Escapes curly braces so PromptTemplate doesn't treat them as variables.
     """
-    sections = []
-    for idx, message in enumerate(messages, start=1):
-        sections.append(
-            textwrap.dedent(
-                f"""
-                Email {idx}:
-                ID: {message.get('id')}
-                From: {message.get('from') or message.get('from_') or message.get('sender_email')}
-                Subject: {message.get('subject')}
-                Snippet: {message.get('snippet')}
-                Body:
-                {message.get('body') or message.get('content') or message.get('snippet')}
-                """
-            ).strip()
+    result = []
+    for m in messages:
+        body = m.get("body") or m.get("content") or m.get("snippet") or ""
+        body = html_to_text(body)
+
+        safe_body = body.replace("{", "{{").replace("}", "}}")
+
+        result.append(
+            (
+                "ID: {id}\n"
+                "From: {from_}\n"
+                "Subject: {subject}\n"
+                "Snippet: {snippet}\n"
+                "Body:\n{body}"
+            ).format(
+                id=m.get("id", ""),
+                from_=m.get("from") or m.get("sender_email", ""),
+                subject=m.get("subject", ""),
+                snippet=m.get("snippet", ""),
+                body=safe_body,
+            )
         )
-    return "\n\n".join(sections) if sections else "Нет содержимого."
 
+    return "\n---\n".join(result) if result else "No emails."

@@ -24,7 +24,8 @@ export class FormattingUtils {
     }
     if (email.from || email.date) {
       out += `<div style='color:${secondary};font-size:0.95em; margin-bottom:0.2em;'>`;
-      if (email.from) out += `From: <span style='color:${accentLight};'>${this.escapeHtml(email.from)}</span>`;
+      if (email.from)
+        out += `From: <span style='color:${accentLight};'>${this.escapeHtml(email.from)}</span>`;
       if (email.from && email.date) out += ' &nbsp; | &nbsp; ';
       if (email.date) out += `<span>${this.escapeHtml(email.date)}</span>`;
       out += `</div>`;
@@ -46,4 +47,3 @@ export class FormattingUtils {
     return lt > 0 ? from.slice(0, lt).trim().replace(/^"|"$/g, '') : from.trim();
   }
 }
-

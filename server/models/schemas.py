@@ -1,6 +1,4 @@
-"""Pydantic schemas for API requests and responses"""
-from typing import Any, List, Optional
-
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -28,23 +26,59 @@ class AnalyzeRequest(BaseModel):
     messages: List[EmailMessage]
 
 
+# --- Filtering tool extended contract ---
+class FilteredEmail(BaseModel):
+    """Result of filtering and prioritization for a single email"""
+    id: str
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Relevant tags such as 'meeting', 'urgent', 'newsletter'"
+    )
+    priority: str = Field(..., description="Priority level: high, medium, low")
+    recommended_action: str = Field(..., description="Recommended action: reply, archive, follow-up, ignore")
+
+
+# --- Auto-reply tool contract ---
+class AutoReplyTemplate(BaseModel):
+    """Auto-reply template"""
+    id: int
+    template: str
+
+
+# --- Newsletter tool contract ---
+class NewsletterInsights(BaseModel):
+    """Insights from newsletter analysis"""
+    unsubscribe: List[str] = Field(default_factory=list)
+    keep: List[str] = Field(default_factory=list)
+    digest: Optional[str] = None
+    weekly_report: Optional[str] = None
+
+
+# --- Task & Deadline contracts ---
+class TaskItem(BaseModel):
+    """Task extracted from an email"""
+    email_id: str
+    task: str
+
+
+class DeadlineItem(BaseModel):
+    """Deadline extracted from an email"""
+    email_id: str
+    deadline: str
+
+
+# --- Main analysis response ---
 class AnalyzeResponse(BaseModel):
     """Response model for email analysis"""
     summary: str
-    key_tasks: List[str] = Field(default_factory=list)
-    deadlines: List[str] = Field(default_factory=list)
-    draft_reply: str = ""
-    filter_results: List[dict] = Field(default_factory=list)
-    newsletter_insights: dict = Field(default_factory=dict)
-    auto_replies: List[dict] = Field(default_factory=list)
-    weekly_report: str = ""
+    key_tasks: List[TaskItem] = Field(default_factory=list)
+    deadlines: List[DeadlineItem] = Field(default_factory=list)
+    draft_reply: Dict[str, str] = Field(default_factory=dict)
+    filter_results: List[FilteredEmail] = Field(default_factory=list)
+    newsletter_insights: NewsletterInsights = Field(default_factory=NewsletterInsights)
+    auto_replies: List[AutoReplyTemplate] = Field(default_factory=list)
     messages: List[dict] = Field(default_factory=list)
     capabilities_tip: Optional[str] = None
-    raw_model_output: str | None = None
-
-
-class WeeklySummaryRequest(BaseModel):
-    """Request model for weekly summary generation"""
-    query: str = Field(default="Сформируй недельный отчёт по почте")
-    messages: List[EmailMessage] = Field(default_factory=list)
-
+    raw_model_output: Optional[str] = None
