@@ -1,12 +1,20 @@
+# server/core/orchestrator.py
+import asyncio
 import logging
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from ..core.executor import PlanExecutor
 from ..tools import FilteringTool, ContentAnalysisTool, NewsletterTool, AutoReplyTool, BaseTool
+from ..tools.key_points import KeyPointsTool
 from .reviewers import QualityReviewer
 from ..config.settings import get_settings
-from ..services.database import store_email_memory
+from ..services.database import (
+    store_email_memory,
+    save_active_emails,
+    load_active_emails,
+    init_active_emails_table,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -31,49 +39,99 @@ def detect_language(query: str, messages: List[Any]) -> str:
     return "English"
 
 
+def _is_summary_only_query(query: str) -> bool:
+    """Определяет, просит ли пользователь только summary (варианты на русском и английском)."""
+    if not query or not isinstance(query, str):
+        return False
+    q = query.strip().lower()
+    tokens = {
+        "summary_only", "just_summary", "summary only", "__summary_only__", "only_summary",
+        "только summary", "только саммари", "только сводка", "только summary", "только сводка"
+    }
+    if q in tokens:
+        return True
+    if ("summary" in q and ("only" in q or "только" in q)) or ("сводка" in q and "только" in q):
+        return True
+    if q.startswith("summary:") and "only" in q:
+        return True
+    return False
+
+
 class AgentOrchestrator:
-    """Coordinates planning, execution, review, and memory persistence."""
+    """
+    Central orchestrator for email analysis.
+
+    Behavior:
+      - initial_summary: saves active emails and runs ONLY content (summary-only)
+      - follow_up: planner decides which tool(s) to run; supports single/sequential/parallel modes
+      - merges results, normalizes output, runs reviewer
+    """
 
     def __init__(self):
+        # Ensure active emails table exists
+        try:
+            init_active_emails_table()
+        except Exception:
+            logger.exception("Failed to ensure active_emails table exists")
+
+        # Tools
         self.filter_tool = FilteringTool()
-        self.content_tool = ContentAnalysisTool()
+        self.content_tool = ContentAnalysisTool()  # summary-only tool
         self.newsletter_tool = NewsletterTool()
+        self.key_points_tool = KeyPointsTool()
         self.auto_reply_tool = AutoReplyTool()
         self.capabilities_tip = None
-        # Планировщик через LLM
-        self.planner = BaseTool(schema={"plan": ["string"]})
-        # Ревьювер
+
+        # Planner: BaseTool used as LLM interface for planning
+        self.planner = BaseTool(schema={"plan": ["string"]}, tool_name="planner")
+
+        # Reviewer
         self.reviewer = QualityReviewer()
 
+        # Allowed tools and safety limits
+        self.allowed_tools = {"filter", "content", "key_points", "newsletter", "auto", "deadlines"}
+        self.max_tools = 3  # safety limit to avoid burning quota
+
+    # -------------------------------------------------------------------------
+    # Planner via LLM
+    # -------------------------------------------------------------------------
     async def _decide_plan(self, query: str, user_language: str = "English") -> List[str]:
-        """Определение плана через LLM вместо ключевых слов."""
+        """Decide plan via LLM. Returns list of tool names in execution order."""
+        # If user explicitly requests only summary, short-circuit
+        if _is_summary_only_query(query):
+            return ["content"]
+
         prompt = (
             f"You are a planning agent.\n"
-            f"Task: Decide which tool should handle the user's request.\n\n"
+            f"Task: Decide which tool(s) should handle the user's request.\n\n"
             f"Available tools:\n"
-            f"- filter: for prioritization, tags, spam detection\n"
-            f"- content: for summarization, key points, tasks, deadlines\n"
-            f"- newsletter: for unsubscribe, digest, weekly reports\n"
-            f"- auto: for auto-replies and draft responses\n\n"
+            f"- filter: prioritization, tags, spam detection\n"
+            f"- content: summarization, overview, general analysis (summary-only)\n"
+            f"- key_points: extract key bullet points per email\n"
+            f"- newsletter: unsubscribe/digest/weekly report insights\n"
+            f"- auto: auto-replies and draft responses\n"
+            f"- deadlines: extract explicit deadlines and attach email_id\n\n"
             f"User query: {query}\n\n"
-            f"Output strictly valid JSON: {{\"plan\": [\"tool_name\"]}}"
+            f"Output strictly valid JSON: {{\"plan\": [\"tool_name\", ...]}}\n"
+            f"Choose at most {self.max_tools} tools and prefer content for general summaries."
         )
         try:
             result = await self.planner.call(prompt, variables={"query": query}, user_language=user_language)
             if isinstance(result, dict) and "plan" in result and isinstance(result["plan"], list):
-                return result["plan"]
+                plan = [p for p in result["plan"] if isinstance(p, str)]
+                plan = [p.strip() for p in plan if p.strip() in self.allowed_tools]
+                if not plan:
+                    return []
+                return plan[: self.max_tools]
         except Exception as e:
             logger.error("Planner failed: %s", e)
         return []
 
+    # -------------------------------------------------------------------------
+    # Normalize result to AnalyzeResponse contract
+    # -------------------------------------------------------------------------
     def _normalize_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Приводим результат к контракту AnalyzeResponse."""
-        dr = result.get("draft_reply")
-        if isinstance(dr, str):
-            result["draft_reply"] = {"generic": dr}
-        elif not isinstance(dr, dict):
-            result["draft_reply"] = {}
-
+        """Normalize result to the AnalyzeResponse contract."""
         kt = result.get("key_tasks", [])
         normalized_kt: List[Dict[str, str]] = []
         if isinstance(kt, list):
@@ -100,6 +158,18 @@ class AgentOrchestrator:
                     })
         result["deadlines"] = normalized_dl
 
+        # Normalize key_points
+        kp = result.get("key_points", [])
+        normalized_kp: List[Dict[str, Any]] = []
+        if isinstance(kp, list):
+            for idx, item in enumerate(kp):
+                if isinstance(item, dict):
+                    normalized_kp.append({
+                        "email_id": item.get("email_id", f"email_{idx}"),
+                        "points": item.get("points", []) if isinstance(item.get("points", []), list) else []
+                    })
+        result["key_points"] = normalized_kp
+
         ni = result.get("newsletter_insights")
         if not isinstance(ni, dict):
             ni = {}
@@ -112,68 +182,270 @@ class AgentOrchestrator:
         result.pop("capabilities_tip", None)
         return result
 
+    # -------------------------------------------------------------------------
+    # INITIAL SUMMARY — save active emails and run ONLY content
+    # -------------------------------------------------------------------------
     async def initial_summary(
         self,
         messages: List[Any],
         query: str = "Summarize the selected emails and highlight key points.",
-        sender_email: str | None = None,
+        sender_email: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Первичный анализ: всегда только контент‑тул."""
+        """Primary analysis: save active emails and return ONLY summary."""
         user_language = detect_language(query, messages)
+        session_id = sender_email or "default"
+
+        # Save active emails (serializable dicts)
+        try:
+            records = [msg.dict() if hasattr(msg, "dict") else msg for msg in messages]
+            save_active_emails(session_id, records)
+        except Exception as e:
+            logger.error("Failed to save active emails: %s", e)
 
         executor = PlanExecutor(
             filter_tool=self.filter_tool,
             newsletter_tool=self.newsletter_tool,
             content_tool=self.content_tool,
+            key_points_tool=self.key_points_tool,
             auto_reply_tool=self.auto_reply_tool,
             capabilities_tip=self.capabilities_tip,
         )
-        result = await executor.run_plan(messages, ["content"], query, user_language=user_language)
-        result = self._normalize_result(result)
 
-        # вызов ревьювера
-        score = await self.reviewer.score(result)
+        # Run only content (summary-only)
+        try:
+            result = await executor.run_plan(messages, ["content"], query, user_language=user_language)
+        except Exception as e:
+            logger.error("Initial content run failed: %s", e)
+            return {"summary": ""}
+
+        # Normalize summary into a single string
+        raw_summary = result.get("summary", "")
+        if isinstance(raw_summary, str):
+            summary_text = raw_summary
+        elif isinstance(raw_summary, list):
+            if raw_summary and isinstance(raw_summary[0], dict) and "summary" in raw_summary[0]:
+                parts = []
+                for item in raw_summary:
+                    eid = item.get("email_id") or item.get("id") or ""
+                    s = item.get("summary") or item.get("text") or ""
+                    if eid:
+                        parts.append(f"{eid}: {s}")
+                    else:
+                        parts.append(str(s))
+                summary_text = "  ".join(parts)
+            else:
+                summary_text = " ".join([str(x) for x in raw_summary])
+        elif isinstance(raw_summary, dict):
+            summary_text = raw_summary.get("summary") or json.dumps(raw_summary, ensure_ascii=False)
+        else:
+            summary_text = ""
+
+        # Reviewer: score and optional refine
+        try:
+            score = await self.reviewer.score({"summary": summary_text})
+            if not isinstance(score, int):
+                try:
+                    import re
+                    m = re.search(r"(\d+)", str(score))
+                    score = int(m.group(1)) if m else 10
+                except Exception:
+                    score = 10
+        except Exception:
+            score = 10
+
         if score < 7:
-            result = await self.reviewer.refine(result)
-
-        if "summary" in result and messages:
             try:
-                records = [msg.dict() if hasattr(msg, "dict") else msg for msg in messages]
-                store_email_memory(records)
-            except Exception as e:
-                logger.error("Failed to store emails in memory: %s", e)
+                refined = await self.reviewer.refine({"summary": summary_text})
+                summary_text = refined.get("summary", summary_text)
+            except Exception:
+                pass
 
-        logger.info("Initial summary result → %s", json.dumps(result, ensure_ascii=False, indent=2))
-        return result
+        # Optionally store emails in longer-term memory
+        try:
+            records = [msg.dict() if hasattr(msg, "dict") else msg for msg in messages]
+            store_email_memory(records)
+        except Exception as e:
+            logger.error("Failed to store emails in memory: %s", e)
 
+        logger.info("Initial summary result → %s", summary_text)
+        return {"summary": summary_text}
+
+    # -------------------------------------------------------------------------
+    # FOLLOW-UP — plan decided by model; supports single/sequential/parallel
+    # -------------------------------------------------------------------------
     async def follow_up(
         self,
         messages: List[Any],
         query: str,
-        sender_email: str | None = None,
+        sender_email: Optional[str] = None,
+        mode: str = "sequential",
     ) -> Dict[str, Any]:
+        """Follow-up: plan is decided by LLM. Loads active emails from DB if messages empty."""
         user_language = detect_language(query, messages)
+        session_id = sender_email or "default"
 
+        # Load active messages from DB if none provided
+        try:
+            active_messages = messages or load_active_emails(session_id)
+        except Exception as e:
+            logger.error("Failed to load active emails: %s", e)
+            active_messages = []
+
+        if not active_messages:
+            return {
+                "summary": "",
+                "messages": [
+                    {"role": "agent", "tool": "system", "content": "No active emails. Please send selected emails to the agent first."}
+                ]
+            }
+
+        # Decide plan
         plan = await self._decide_plan(query, user_language=user_language)
         logger.info("Follow-up execution plan → %s", plan)
 
         if not plan:
-            return {"summary": "", "messages": [{"role": "agent", "tool": "system", "content": "No relevant tool detected."}]}
+            return {
+                "summary": "",
+                "messages": [
+                    {"role": "agent", "tool": "system", "content": "No relevant tool detected."}
+                ]
+            }
+
+        # Truncate plan to protect quota
+        if len(plan) > self.max_tools:
+            logger.info("Truncating plan from %d to %d tools to protect quota", len(plan), self.max_tools)
+            plan = plan[: self.max_tools]
 
         executor = PlanExecutor(
             filter_tool=self.filter_tool,
             newsletter_tool=self.newsletter_tool,
             content_tool=self.content_tool,
+            key_points_tool=self.key_points_tool,
             auto_reply_tool=self.auto_reply_tool,
             capabilities_tip=self.capabilities_tip,
         )
-        result = await executor.run_plan(messages, plan, query, user_language=user_language)
-        result = self._normalize_result(result)
 
-        # ── вызов ревьювера ──
-        score = await self.reviewer.score(result)
+        # Execute plan according to mode
+        results: List[Dict[str, Any]] = []
+
+        if mode == "single":
+            tool = plan[0]
+            try:
+                res = await executor.run_plan(active_messages, [tool], query, user_language=user_language)
+            except Exception as e:
+                logger.exception("Tool %s failed in single mode: %s", tool, e)
+                res = {}
+            results.append(res)
+
+        elif mode == "parallel":
+            async def run_one(t):
+                try:
+                    return await executor.run_plan(active_messages, [t], query, user_language=user_language)
+                except Exception as e:
+                    logger.exception("Tool %s failed in parallel mode: %s", t, e)
+                    return {}
+
+            tasks = [run_one(t) for t in plan]
+            results = await asyncio.gather(*tasks)
+
+        else:  # sequential
+            for t in plan:
+                try:
+                    res = await executor.run_plan(active_messages, [t], query, user_language=user_language)
+                except Exception as e:
+                    logger.exception("Tool %s failed in sequential mode: %s", t, e)
+                    res = {}
+                results.append(res)
+
+        # Merge results: aggregate + normalize
+        merged: Dict[str, Any] = {
+            "summary": "",
+            "key_tasks": [],
+            "deadlines": [],
+            "key_points": [],
+            "filter_results": [],
+            "newsletter_insights": {},
+            "auto_replies": [],
+            "messages": [],
+        }
+
+        # Merge logic: summary first non-empty in plan order; lists extend; dicts shallow merge
+        for idx, res in enumerate(results):
+            if not isinstance(res, dict):
+                continue
+            # summary
+            if not merged["summary"]:
+                s = res.get("summary")
+                if isinstance(s, str) and s.strip():
+                    merged["summary"] = s.strip()
+            # lists
+            for list_key in ("key_tasks", "deadlines", "key_points", "filter_results", "auto_replies"):
+                val = res.get(list_key)
+                if isinstance(val, list):
+                    merged[list_key].extend(val)
+            # newsletter_insights
+            ni = res.get("newsletter_insights")
+            if isinstance(ni, dict):
+                merged["newsletter_insights"].update(ni)
+            # messages
+            msgs = res.get("messages")
+            if isinstance(msgs, list) and msgs:
+                merged["messages"].extend(msgs)
+            else:
+                merged["messages"].append({"role": "agent", "tool": plan[idx] if idx < len(plan) else "unknown", "content": res.get("summary", "")})
+
+        # Deduplicate lists by stable key
+        def dedupe_list(items: List[Any]) -> List[Any]:
+            seen = set()
+            out = []
+            for it in items:
+                try:
+                    if isinstance(it, dict):
+                        key = tuple(sorted((k, str(v)) for k, v in it.items()))
+                    else:
+                        key = str(it)
+                except Exception:
+                    key = str(it)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(it)
+            return out
+
+        for k in ("key_tasks", "deadlines", "key_points", "filter_results", "auto_replies"):
+            merged[k] = dedupe_list(merged[k])
+
+        # Normalize structure
+        merged = self._normalize_result(merged)
+
+        # Reviewer: score + refine
+        try:
+            score = await self.reviewer.score(merged)
+            if not isinstance(score, int):
+                try:
+                    import re
+                    m = re.search(r"(\d+)", str(score))
+                    score = int(m.group(1)) if m else 10
+                except Exception:
+                    score = 10
+        except Exception:
+            score = 10
+
         if score < 7:
-            result = await self.reviewer.refine(result)
+            try:
+                merged = await self.reviewer.refine(merged)
+            except Exception:
+                logger.exception("Reviewer refine failed")
 
-        logger.info("Follow-up result → %s", json.dumps(result, ensure_ascii=False, indent=2))
-        return result
+        logger.info("Follow-up result → %s", json.dumps(merged, ensure_ascii=False, indent=2))
+        return merged
+
+    # -------------------------------------------------------------------------
+    # Legacy: analyze_emails (alias to initial_summary)
+    # -------------------------------------------------------------------------
+    async def analyze_emails(
+        self,
+        messages: List[Any],
+        query: Optional[str],
+        sender_email: Optional[str],
+    ) -> Dict[str, Any]:
+        return await self.initial_summary(messages, query=query or "Summarize the selected emails.", sender_email=sender_email)

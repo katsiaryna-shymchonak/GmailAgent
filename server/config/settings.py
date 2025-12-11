@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(
         ...,
         description="Google Gemini API key",
-        env="GEMINI_API_KEY",  # accept either name
+        env="GEMINI_API_KEY",
     )
+    # Use a model identifier that starts with "models/" by default
     gemini_model: str = Field(
-        default="gemini-2.5-flash",
+        default="models/gemini-2.5-flash",
         env="GEMINI_MODEL",
     )
     embedding_model: str = Field(
@@ -31,6 +32,9 @@ class Settings(BaseSettings):
     pg_pool_min_size: int = Field(default=1)
     pg_pool_max_size: int = Field(default=5)
     memory_table: str = Field(default="email_memory")
+
+    # Active emails table name (short-term conversation memory)
+    active_emails_table: str = Field(default="agent_active_emails")
 
     # v2-style config
     model_config = SettingsConfigDict(

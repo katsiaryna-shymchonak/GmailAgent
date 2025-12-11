@@ -1,6 +1,7 @@
 """Database service for PostgreSQL operations"""
 import contextlib
-from typing import Dict, Iterator, List
+import json
+from typing import Dict, Iterator, List, Optional
 
 import psycopg
 from psycopg.rows import dict_row
@@ -8,7 +9,7 @@ from psycopg_pool import ConnectionPool
 from psycopg.types.json import Json
 from pgvector.psycopg import register_vector, Vector
 
-from ..config import get_settings
+from ..config.settings import get_settings
 
 settings = get_settings()
 
@@ -65,6 +66,21 @@ def init_memory_table() -> None:
         conn.commit()
 
 
+def init_active_emails_table() -> None:
+    """Initialize table for storing active conversation emails (per session)"""
+    table = settings.active_emails_table or "agent_active_emails"
+    sql = f"""
+    CREATE TABLE IF NOT EXISTS {table} (
+        session_id TEXT PRIMARY KEY,
+        emails JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    """
+    with get_connection() as conn:
+        conn.execute(sql)
+        conn.commit()
+
+
 def store_email_memory(records: List[Dict]) -> int:
     """Store email records with embeddings in database"""
     if not records:
@@ -79,7 +95,7 @@ def store_email_memory(records: List[Dict]) -> int:
         for rec in records
     ]
     embeddings = embed_texts(texts)
-    
+
     # Insert or update records with embeddings
     insert_sql = f"""
     INSERT INTO {settings.memory_table}
@@ -121,10 +137,52 @@ def store_email_memory(records: List[Dict]) -> int:
     return len(records)
 
 
+def save_active_emails(session_id: str, emails: List[Dict]) -> None:
+    """
+    Save or replace the active emails for a given session_id.
+    This is the memory of "which emails we are currently discussing".
+    """
+    if not session_id:
+        session_id = "default"
+    table = settings.active_emails_table or "agent_active_emails"
+    sql = f"""
+    INSERT INTO {table} (session_id, emails, updated_at)
+    VALUES (%s, %s, NOW())
+    ON CONFLICT (session_id) DO UPDATE
+    SET emails = EXCLUDED.emails,
+        updated_at = NOW();
+    """
+    with get_connection() as conn:
+        conn.execute(sql, (session_id, Json(emails)))
+        conn.commit()
+
+
+def load_active_emails(session_id: str) -> List[Dict]:
+    """Load active emails for a given session_id. Returns empty list if none."""
+    if not session_id:
+        session_id = "default"
+    table = settings.active_emails_table or "agent_active_emails"
+    sql = f"SELECT emails FROM {table} WHERE session_id = %s"
+    with get_connection() as conn:
+        row = conn.execute(sql, (session_id,)).fetchone()
+    return row["emails"] if row and row.get("emails") else []
+
+
+def clear_active_emails(session_id: str) -> None:
+    """Clear active emails for a session (optional)."""
+    if not session_id:
+        session_id = "default"
+    table = settings.active_emails_table or "agent_active_emails"
+    sql = f"DELETE FROM {table} WHERE session_id = %s"
+    with get_connection() as conn:
+        conn.execute(sql, (session_id,))
+        conn.commit()
+
+
 def get_weekly_metrics() -> Dict:
     """Get weekly email metrics from database"""
     table = settings.memory_table
-    
+
     # Count emails by type and reply requirement
     sql_counts = f"""
     SELECT
@@ -136,7 +194,7 @@ def get_weekly_metrics() -> Dict:
     FROM {table}
     WHERE created_at >= NOW() - INTERVAL '7 days';
     """
-    
+
     # Get newsletter samples
     sql_newsletters = f"""
     SELECT subject, sender_email, snippet
@@ -166,4 +224,3 @@ def fetch_recent_emails(days: int = 7, limit: int = 50) -> List[Dict]:
     with get_connection() as conn:
         rows = conn.execute(sql, (limit,)).fetchall()
     return rows
-

@@ -18,6 +18,7 @@ export class App {
     this.lastSelectedMessagesDetails = [];
     this.lastAgentInsights = null;
     this.activeSenderKey = '';
+    this.sessionId = 'default'; // current session key for active emails
     this.spinner = null;
     this.init();
   }
@@ -42,9 +43,15 @@ export class App {
       'key-points-content',
       'key-tasks-content',
       'deadlines-content',
-      'draft-replies-content',
+      // draft-replies-content intentionally removed
       'spinner',
+      'send-to-ai',
+      'select-last-week-btn',
+      'email-prev',
+      'email-next',
+      'email-page-indicator',
     ];
+
     const missing = ids.filter((id) => !document.getElementById(id));
     if (missing.length) {
       console.error('Missing DOM elements:', missing);
@@ -103,10 +110,13 @@ export class App {
     if (selectLastWeekBtn)
       selectLastWeekBtn.addEventListener('click', () => this.selectLastWeekMessages());
 
-    this.conversationPanel.sendBtn.addEventListener('click', async () => {
-      const query = this.conversationPanel.getInputValue();
-      if (query) await this.sendFollowUp(query);
-    });
+    // safe-guard: ensure conversationPanel.sendBtn exists
+    if (this.conversationPanel && this.conversationPanel.sendBtn) {
+      this.conversationPanel.sendBtn.addEventListener('click', async () => {
+        const query = this.conversationPanel.getInputValue();
+        if (query) await this.sendFollowUp(query);
+      });
+    }
   }
 
   onSenderSelect(senderEmail) {
@@ -128,7 +138,7 @@ export class App {
   onEmailSelectionChange(count) {
     const sendToAiBtn = document.getElementById('send-to-ai');
     if (sendToAiBtn) sendToAiBtn.disabled = count === 0;
-    this.conversationPanel.setSendEnabled(count > 0);
+    if (this.conversationPanel) this.conversationPanel.setSendEnabled(count > 0);
   }
 
   async sendSelectedToAi() {
@@ -137,19 +147,26 @@ export class App {
 
     const sendToAiBtn = document.getElementById('send-to-ai');
     if (sendToAiBtn) sendToAiBtn.disabled = true;
-    this.conversationPanel.setSendEnabled(false);
-    this.conversationPanel.appendEntry('System', 'Preparing selected emails...');
-    this.conversationPanel.open();
+    if (this.conversationPanel) this.conversationPanel.setSendEnabled(false);
+    if (this.conversationPanel) {
+      this.conversationPanel.appendEntry('System', 'Preparing selected emails...');
+      this.conversationPanel.open();
+    }
 
     DOMUtils.setListLoading(this.spinner, true);
     try {
       const messages = await this.emailList.gatherSelectedMessages();
       this.lastSelectedMessagesDetails = messages;
-      const senderEmail = FormattingUtils.parseSenderEmail(this.activeSenderKey) || null;
 
-      this.conversationPanel.appendEntry('System', 'Analyzing with AI agent...');
-      // теперь вызываем initialSummary
-      const data = await this.apiClient.initialSummary(messages, senderEmail);
+      // sessionId is the key used to store active emails on the backend
+      this.sessionId = FormattingUtils.parseSenderEmail(this.activeSenderKey) || 'default';
+
+      if (this.conversationPanel) this.conversationPanel.appendEntry('System', 'Analyzing with AI agent...');
+
+      // call initialSummary with sessionId (backend treats it as session key)
+      const data = await this.apiClient.initialSummary(messages, this.sessionId);
+
+      // update UI and store last insights
       this.renderAgentResponse(data);
     } catch (error) {
       let errorMsg = error.message || 'Failed to contact AI agent.';
@@ -159,29 +176,30 @@ export class App {
       ) {
         errorMsg = 'Cannot reach backend. Is the server running?';
       }
-      this.conversationPanel.appendEntry('Error', errorMsg);
+      if (this.conversationPanel) this.conversationPanel.appendEntry('Error', errorMsg);
+      console.error('sendSelectedToAi error:', error);
     } finally {
       DOMUtils.setListLoading(this.spinner, false);
       if (sendToAiBtn) sendToAiBtn.disabled = this.emailList.getSelectedIds().size === 0;
-      this.conversationPanel.setSendEnabled(true);
-      this.conversationPanel.setInputPlaceholder('Ask a follow-up question...');
+      if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
+      if (this.conversationPanel) this.conversationPanel.setInputPlaceholder('Ask a follow-up question...');
     }
   }
 
   async sendFollowUp(query) {
     if (!query) return;
-    this.conversationPanel.setSendEnabled(false);
-    this.conversationPanel.appendEntry('You', query);
-    this.conversationPanel.clearInput();
+    if (this.conversationPanel) this.conversationPanel.setSendEnabled(false);
+    if (this.conversationPanel) this.conversationPanel.appendEntry('You', query);
+    if (this.conversationPanel) this.conversationPanel.clearInput();
 
     DOMUtils.setListLoading(this.spinner, true);
     try {
-      const messages = this.lastSelectedMessagesDetails.length
-        ? this.lastSelectedMessagesDetails
-        : [];
-      const senderEmail = FormattingUtils.parseSenderEmail(this.activeSenderKey) || null;
-      // теперь вызываем followUp
-      const data = await this.apiClient.followUp(query, messages, senderEmail);
+      // Use session id so backend loads active emails from DB.
+      const sessionId = this.sessionId || FormattingUtils.parseSenderEmail(this.activeSenderKey) || 'default';
+
+      // call followUp with query and sessionId only (no messages)
+      const data = await this.apiClient.followUp(query, sessionId);
+
       this.renderAgentResponse(data);
     } catch (error) {
       let errorMsg = error.message || 'Failed to contact AI agent.';
@@ -191,50 +209,56 @@ export class App {
       ) {
         errorMsg = 'Cannot reach backend. Is the server running?';
       }
-      this.conversationPanel.appendEntry('Error', errorMsg);
+      if (this.conversationPanel) this.conversationPanel.appendEntry('Error', errorMsg);
+      console.error('sendFollowUp error:', error);
     } finally {
       DOMUtils.setListLoading(this.spinner, false);
-      this.conversationPanel.setSendEnabled(true);
-      this.conversationPanel.focusInput();
+      if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
+      if (this.conversationPanel) this.conversationPanel.focusInput();
     }
   }
 
   async selectLastWeekMessages() {
-    this.conversationPanel.appendEntry('System', "Loading last week's emails...");
-    this.conversationPanel.open();
-    this.conversationPanel.setSendEnabled(false);
+    if (this.conversationPanel) {
+      this.conversationPanel.appendEntry('System', "Loading last week's emails...");
+      this.conversationPanel.open();
+      this.conversationPanel.setSendEnabled(false);
+    }
 
     DOMUtils.setListLoading(this.spinner, true);
     try {
       const messages = await GmailService.getWeeklyMessages(500);
       if (messages.length === 0) {
-        this.conversationPanel.appendEntry('System', 'No emails found for last week.');
-        this.conversationPanel.setSendEnabled(true);
+        if (this.conversationPanel) this.conversationPanel.appendEntry('System', 'No emails found for last week.');
+        if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
         return;
       }
-      this.conversationPanel.appendEntry(
-        'System',
-        `Loaded ${messages.length} emails. Displaying in list...`
-      );
+      if (this.conversationPanel) this.conversationPanel.appendEntry('System', `Loaded ${messages.length} emails. Displaying in list...`);
       this.emailList.render(messages);
       this.emailList.updatePaginationControls();
     } catch (error) {
-      this.conversationPanel.appendEntry('Error', error.message || 'Failed to load emails.');
+      if (this.conversationPanel) this.conversationPanel.appendEntry('Error', error.message || 'Failed to load emails.');
+      console.error('selectLastWeekMessages error:', error);
     } finally {
       DOMUtils.setListLoading(this.spinner, false);
-      this.conversationPanel.setSendEnabled(true);
+      if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
     }
   }
 
   renderAgentResponse(data) {
     const safe = ensureDataShape(data);
 
-    if (safe.summary) {
+    if (safe.summary && this.conversationPanel) {
       this.conversationPanel.appendEntry('Agent', safe.summary, summarizeToolUsage(safe));
     }
 
+    // Ensure insights panel is updated with the full response
     if (this.insightsPanel) {
-      this.insightsPanel.update(safe);
+      try {
+        this.insightsPanel.update(safe);
+      } catch (e) {
+        console.error('InsightsPanel.update failed:', e);
+      }
     }
 
     this.lastAgentInsights = safe;

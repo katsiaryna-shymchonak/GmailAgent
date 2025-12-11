@@ -3,7 +3,7 @@
  */
 export class ApiClient {
   constructor(baseUrl = 'http://localhost:8000') {
-    this.baseUrl = baseUrl;
+    this.baseUrl = baseUrl.replace(/\/+$/, ''); // remove trailing slash
 
     // Unified normalized contract expected by frontend
     this.defaultSchema = {
@@ -16,7 +16,7 @@ export class ApiClient {
       // optional analysis fields (some tools may return them)
       key_tasks: [],
       deadlines: [],
-      draft_reply: {}, // добавим для совместимости
+      draft_reply: {}, // compatibility
     };
   }
 
@@ -82,36 +82,39 @@ export class ApiClient {
     return normalized;
   }
 
-  // --- новый метод: только summary ---
-  async initialSummary(messages, senderEmail = null) {
-    return this._post('/analyze/initial', {
-      sender_email: senderEmail,
-      messages,
-    });
+  // --- initial: save active emails and return summary ---
+  async initialSummary(messages, sessionId = null) {
+    const payload = {
+      session_id: sessionId || 'default',
+      messages: Array.isArray(messages) ? messages : [],
+    };
+    return this._post('/analyze/initial', payload);
   }
 
-  // --- новый метод: follow-up ---
-  async followUp(query, messages, senderEmail = null) {
-    return this._post('/analyze/followup', {
-      query,
-      sender_email: senderEmail,
-      messages,
-    });
+  // --- follow-up: only query + session_id (backend loads active emails) ---
+  async followUp(query, sessionId = null) {
+    const payload = {
+      session_id: sessionId || 'default',
+      query: typeof query === 'string' ? query : String(query || ''),
+    };
+    return this._post('/analyze/followup', payload);
   }
 
-  // старый метод можно оставить для совместимости
-  async analyzeEmails(query, messages, senderEmail = null) {
-    return this._post('/analyze/emails', {
-      query,
-      sender_email: senderEmail,
-      messages,
-    });
+  // backward-compatible full analysis endpoint (kept for compatibility)
+  async analyzeEmails(query, messages, sessionId = null) {
+    const payload = {
+      session_id: sessionId || 'default',
+      query: typeof query === 'string' ? query : String(query || ''),
+      messages: Array.isArray(messages) ? messages : [],
+    };
+    return this._post('/analyze/emails', payload);
   }
 
   async getWeeklyReport(query, messages) {
-    return this._post('/analyze/weekly', {
+    const payload = {
       query: query || 'Create weekly report',
-      messages: messages || [],
-    });
+      messages: Array.isArray(messages) ? messages : [],
+    };
+    return this._post('/analyze/weekly', payload);
   }
 }

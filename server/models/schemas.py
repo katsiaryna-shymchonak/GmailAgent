@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -69,16 +69,18 @@ class DeadlineItem(BaseModel):
     deadline: str
 
 
-# --- Main analysis response ---
 class AnalyzeResponse(BaseModel):
     """Response model for email analysis"""
     summary: str
     key_tasks: List[TaskItem] = Field(default_factory=list)
     deadlines: List[DeadlineItem] = Field(default_factory=list)
-    draft_reply: Dict[str, str] = Field(default_factory=dict)
     filter_results: List[FilteredEmail] = Field(default_factory=list)
     newsletter_insights: NewsletterInsights = Field(default_factory=NewsletterInsights)
     auto_replies: List[AutoReplyTemplate] = Field(default_factory=list)
     messages: List[dict] = Field(default_factory=list)
     capabilities_tip: Optional[str] = None
     raw_model_output: Optional[str] = None
+    key_points: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+

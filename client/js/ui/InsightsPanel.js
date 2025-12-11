@@ -5,68 +5,142 @@ import { FormattingUtils } from '../utils/formatting.js';
 
 export class InsightsPanel {
   constructor(filterEl, newsletterEl, weeklyReportEl, autoReplyEl) {
-    this.filterEl = filterEl;
-    this.newsletterEl = newsletterEl;
-    this.weeklyReportEl = weeklyReportEl;
-    this.autoReplyEl = autoReplyEl;
+    // Принимаем либо DOM-элементы, либо id-строки (поддержка гибкости)
+    this.filterEl = typeof filterEl === 'string' ? document.getElementById(filterEl) : filterEl;
+    this.newsletterEl = typeof newsletterEl === 'string' ? document.getElementById(newsletterEl) : newsletterEl;
+    this.weeklyReportEl = typeof weeklyReportEl === 'string' ? document.getElementById(weeklyReportEl) : weeklyReportEl;
+    this.autoReplyEl = typeof autoReplyEl === 'string' ? document.getElementById(autoReplyEl) : autoReplyEl;
 
-    // Дополнительные секции
-    this.summaryEl = document.getElementById('summary-content');
-    this.keyPointsEl = document.getElementById('key-points-content');
-    this.keyTasksEl = document.getElementById('key-tasks-content');
-    this.deadlinesEl = document.getElementById('deadlines-content');
-    this.draftRepliesEl = document.getElementById('draft-replies-content');
+    // Дополнительные секции (могут отсутствовать)
+    this.summaryEl = document.getElementById('summary-content') || null;
+    this.keyPointsEl = document.getElementById('key-points-content') || null;
+    this.keyTasksEl = document.getElementById('key-tasks-content') || null;
+    this.deadlinesEl = document.getElementById('deadlines-content') || null;
+
+    // Защита: если какой-то элемент не найден, методы просто ничего не рендерят
+  }
+
+  // --- Утилиты ---
+  _toArray(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      return value.split('\n').map((s) => s.trim()).filter(Boolean);
+    }
+    if (value == null) return [];
+    return [value];
+  }
+
+  _normalizePriority(raw) {
+    if (!raw && raw !== 0) return 'low';
+    const p = String(raw).toLowerCase();
+    if (p === 'high' || p === 'высокая' || p === 'urgent') return 'high';
+    if (p === 'medium' || p === 'средняя' || p === 'normal') return 'medium';
+    if (p === 'low' || p === 'низкая') return 'low';
+    if (p.includes('high') || p.includes('высок')) return 'high';
+    if (p.includes('med') || p.includes('сред')) return 'medium';
+    if (p.includes('low') || p.includes('низ')) return 'low';
+    return 'low';
   }
 
   update(data) {
     const safe = data && typeof data === 'object' ? data : {};
 
-    this.renderSummary(typeof safe.summary === 'string' ? safe.summary : '');
-    this.renderFilterResults(Array.isArray(safe.filter_results) ? safe.filter_results : []);
-    this.renderNewsletterInsights(
-      safe.newsletter_insights && typeof safe.newsletter_insights === 'object'
-        ? safe.newsletter_insights
-        : {},
-      typeof safe.weekly_report === 'string' ? safe.weekly_report : ''
-    );
-    this.renderAutoReplies(Array.isArray(safe.auto_replies) ? safe.auto_replies : []);
+    try {
+      // Summary: string preferred; if array of objects (emails) -> render as filter results fallback
+      if (typeof safe.summary === 'string') {
+        this.renderSummary(safe.summary);
+      } else if (Array.isArray(safe.summary)) {
+        const arr = safe.summary;
+        const isObjects = arr.length > 0 && typeof arr[0] === 'object';
+        if (isObjects) {
+          this.renderSummary('');
+          this.renderFilterResults(arr);
+        } else {
+          this.renderSummary(arr.map((s) => String(s)).join('<br>'));
+        }
+      } else {
+        this.renderSummary('');
+      }
+    } catch (e) {
+      console.error('InsightsPanel.update: summary render failed', e);
+    }
 
-    this.renderKeyPoints(Array.isArray(safe.key_points) ? safe.key_points : []);
-    this.renderKeyTasks(Array.isArray(safe.key_tasks) ? safe.key_tasks : []);
-    this.renderDeadlines(Array.isArray(safe.deadlines) ? safe.deadlines : []);
-    this.renderDraftReplies(safe.draft_reply || {});
+    try {
+      // filter_results
+      this.renderFilterResults(Array.isArray(safe.filter_results) ? safe.filter_results : []);
+    } catch (e) {
+      console.error('InsightsPanel.update: filter_results render failed', e);
+    }
+
+    try {
+      // newsletter insights
+      const newsletterInsights = safe.newsletter_insights && typeof safe.newsletter_insights === 'object'
+        ? safe.newsletter_insights
+        : {};
+      const weeklyReport = (newsletterInsights && typeof newsletterInsights.weekly_report === 'string')
+        ? newsletterInsights.weekly_report
+        : (typeof safe.weekly_report === 'string' ? safe.weekly_report : '');
+      this.renderNewsletterInsights(newsletterInsights, weeklyReport);
+    } catch (e) {
+      console.error('InsightsPanel.update: newsletter render failed', e);
+    }
+
+    try {
+      this.renderAutoReplies(Array.isArray(safe.auto_replies) ? safe.auto_replies : []);
+    } catch (e) {
+      console.error('InsightsPanel.update: auto replies render failed', e);
+    }
+
+    try {
+      // key_points
+      this.renderKeyPoints(Array.isArray(safe.key_points) ? safe.key_points : []);
+    } catch (e) {
+      console.error('InsightsPanel.update: key points render failed', e);
+    }
+
+    try {
+      // key_tasks, deadlines
+      this.renderKeyTasks(Array.isArray(safe.key_tasks) ? safe.key_tasks : []);
+      this.renderDeadlines(Array.isArray(safe.deadlines) ? safe.deadlines : []);
+    } catch (e) {
+      console.error('InsightsPanel.update: tasks/deadlines render failed', e);
+    }
   }
 
   renderSummary(text) {
     if (!this.summaryEl) return;
-    this.summaryEl.innerHTML =
-      text && text.length
-        ? `<p>${FormattingUtils.escapeHtml(text)}</p>`
-        : '<p class="muted">No summary available.</p>';
+    const safeText = text && text.length ? String(text) : '';
+    this.summaryEl.innerHTML = safeText
+      ? `<p>${FormattingUtils.escapeHtml(safeText)}</p>`
+      : '<p class="muted">No summary available.</p>';
   }
 
   renderFilterResults(items) {
     if (!this.filterEl) return;
+    // Очистка контейнера
+    this.filterEl.innerHTML = '';
     if (!items || !items.length) {
       this.filterEl.innerHTML = '<p class="muted">No filter results. Send emails to the agent.</p>';
       return;
     }
-    this.filterEl.innerHTML = '';
+
+    const frag = document.createDocumentFragment();
     items.forEach((item) => {
-      const subject = item.subject || item.id || 'Email';
-      const priority = item.priority ? String(item.priority).toLowerCase() : 'normal';
-      const action = item.recommended_action
-        ? FormattingUtils.escapeHtml(item.recommended_action)
-        : 'none';
-      const tags =
-        (item.tags || [])
-          .map((tag) => `<span class="chip">${FormattingUtils.escapeHtml(tag)}</span>`)
-          .join('') || '<span class="muted">No tags</span>';
+      const subject = item && (item.subject || item.id || item.email_id) ? (item.subject || item.id || item.email_id) : 'Email';
+      const rawPriority = item && (item.priority || item.priority === 0) ? item.priority : 'low';
+      const priority = this._normalizePriority(rawPriority);
+      const action = item && item.recommended_action ? FormattingUtils.escapeHtml(String(item.recommended_action)) : 'none';
+      const tagsArr = (item && Array.isArray(item.tags)) ? item.tags : [];
+      const tags = (tagsArr.length > 0)
+        ? tagsArr.map((tag) => `<span class="chip">${FormattingUtils.escapeHtml(String(tag))}</span>`).join('')
+        : '<span class="muted">No tags</span>';
 
       let priorityClass = '';
       if (priority === 'high') priorityClass = 'priority-high';
       else if (priority === 'medium') priorityClass = 'priority-medium';
       else if (priority === 'low') priorityClass = 'priority-low';
+
+      const snippet = item && item.body ? FormattingUtils.escapeHtml(String(item.body)).slice(0, 300) : '';
 
       const card = document.createElement('div');
       card.className = 'insight-item';
@@ -75,34 +149,40 @@ export class InsightsPanel {
         <div class="muted ${priorityClass}">
           Priority: ${FormattingUtils.escapeHtml(priority)} • Action: ${action}
         </div>
+        <div class="muted snippet">${snippet}${snippet ? '…' : ''}</div>
         <div>${tags}</div>
       `;
-      this.filterEl.appendChild(card);
+      frag.appendChild(card);
     });
+    this.filterEl.appendChild(frag);
   }
 
   renderNewsletterInsights(insights, weeklyReportFallback) {
     if (!this.newsletterEl || !this.weeklyReportEl) return;
+
+    // Очистка
+    this.newsletterEl.innerHTML = '';
+    this.weeklyReportEl.innerHTML = '';
+
     if (!insights || Object.keys(insights).length === 0) {
       this.newsletterEl.innerHTML = '<p class="muted">No newsletter recommendations.</p>';
       this.weeklyReportEl.textContent = weeklyReportFallback || 'No report yet.';
       return;
     }
 
-    // Используем глобальный window.marked
-    const digestHtml = insights.digest && window.marked ? window.marked.parse(insights.digest) : '';
+    const digestHtml = insights.digest && window.marked ? window.marked.parse(insights.digest) : (insights.digest ? FormattingUtils.escapeHtml(String(insights.digest)) : '');
     const weeklyHtml =
       insights.weekly_report && window.marked
         ? window.marked.parse(insights.weekly_report)
-        : weeklyReportFallback && window.marked
+        : (weeklyReportFallback && window.marked
           ? window.marked.parse(weeklyReportFallback)
-          : 'No report yet.';
+          : (weeklyReportFallback ? FormattingUtils.escapeHtml(String(weeklyReportFallback)) : 'No report yet.'));
 
     const unsubscribeItems = (insights.unsubscribe || []).map(
-      (item) => `<li>${FormattingUtils.escapeHtml(item)}</li>`
+      (item) => `<li>${FormattingUtils.escapeHtml(String(item))}</li>`
     );
     const keepItems = (insights.keep || []).map(
-      (item) => `<li>${FormattingUtils.escapeHtml(item)}</li>`
+      (item) => `<li>${FormattingUtils.escapeHtml(String(item))}</li>`
     );
 
     const unsubscribe =
@@ -136,78 +216,104 @@ export class InsightsPanel {
 
   renderAutoReplies(templates) {
     if (!this.autoReplyEl) return;
+    this.autoReplyEl.innerHTML = '';
     if (!templates || !templates.length) {
       this.autoReplyEl.innerHTML =
         '<p class="muted">No templates. Agent will prepare them after analysis.</p>';
       return;
     }
-    this.autoReplyEl.innerHTML = '';
+
+    const frag = document.createDocumentFragment();
     templates.forEach((t, idx) => {
-      // если объект с полем template
       const id = t && typeof t === 'object' && 'id' in t ? t.id : idx + 1;
       const text = t && typeof t === 'object' && 'template' in t ? t.template : String(t);
 
       const block = document.createElement('div');
       block.className = 'template-block';
-      block.innerHTML = `<strong>#${id}:</strong> <code>${FormattingUtils.escapeHtml(text)}</code>`;
-      this.autoReplyEl.appendChild(block);
+      block.innerHTML = `<strong>#${FormattingUtils.escapeHtml(String(id))}:</strong> <code>${FormattingUtils.escapeHtml(String(text))}</code>`;
+      frag.appendChild(block);
     });
+    this.autoReplyEl.appendChild(frag);
   }
 
   renderKeyPoints(points) {
     if (!this.keyPointsEl) return;
-    if (!points.length) {
+    this.keyPointsEl.innerHTML = '';
+
+    if (!points || !points.length) {
       this.keyPointsEl.innerHTML = '<p class="muted">No key points.</p>';
       return;
     }
-    this.keyPointsEl.innerHTML = points
-      .map(
-        (p) =>
-          `<div class="insight-item"><strong>${FormattingUtils.escapeHtml(p.email_id)}</strong><ul>${p.points.map((pt) => `<li>${FormattingUtils.escapeHtml(pt)}</li>`).join('')}</ul></div>`
-      )
-      .join('');
+
+    const frag = document.createDocumentFragment();
+    points.forEach((p) => {
+      const id = p && p.email_id ? FormattingUtils.escapeHtml(String(p.email_id)) : 'email';
+      const pts = Array.isArray(p.points) ? p.points : this._toArray(p.points);
+      const listHtml = pts.length
+        ? `<ul>${pts.map((pt) => `<li>${FormattingUtils.escapeHtml(String(pt))}</li>`).join('')}</ul>`
+        : '<p class="muted">No extracted points.</p>';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'insight-item';
+      wrapper.innerHTML = `<strong>${id}</strong>${listHtml}`;
+      frag.appendChild(wrapper);
+    });
+
+    this.keyPointsEl.appendChild(frag);
   }
 
   renderKeyTasks(tasks) {
     if (!this.keyTasksEl) return;
-    if (!tasks.length) {
+    this.keyTasksEl.innerHTML = '';
+
+    if (!tasks || !tasks.length) {
       this.keyTasksEl.innerHTML = '<p class="muted">No tasks.</p>';
       return;
     }
-    this.keyTasksEl.innerHTML = tasks
-      .map(
-        (t) =>
-          `<div class="insight-item">📌 ${FormattingUtils.escapeHtml(t.task)} ${t.deadline ? `— <span class="priority-medium">${FormattingUtils.escapeHtml(t.deadline)}</span>` : ''}</div>`
-      )
-      .join('');
+
+    const frag = document.createDocumentFragment();
+    tasks.forEach((t) => {
+      const emailId = t && t.email_id ? FormattingUtils.escapeHtml(String(t.email_id)) : '';
+      const taskText = t && t.task ? FormattingUtils.escapeHtml(String(t.task)) : '';
+      const deadline = t && (t.deadline || t.due) ? FormattingUtils.escapeHtml(String(t.deadline || t.due)) : '';
+
+      const node = document.createElement('div');
+      node.className = 'insight-item';
+      node.innerHTML = `
+        ${emailId ? `<div class="muted">${emailId}</div>` : ''}
+        <div>📌 ${taskText}${deadline ? ` — <span class="priority-medium">${deadline}</span>` : ''}</div>
+      `;
+      frag.appendChild(node);
+    });
+
+    this.keyTasksEl.appendChild(frag);
   }
 
   renderDeadlines(deadlines) {
     if (!this.deadlinesEl) return;
-    if (!deadlines.length) {
+    this.deadlinesEl.innerHTML = '';
+
+    if (!deadlines || !deadlines.length) {
       this.deadlinesEl.innerHTML = '<p class="muted">No deadlines.</p>';
       return;
     }
-    this.deadlinesEl.innerHTML = deadlines
-      .map(
-        (d) =>
-          `<div class="insight-item">⏰ ${FormattingUtils.escapeHtml(d.description)} — ${FormattingUtils.escapeHtml(d.date)}</div>`
-      )
-      .join('');
-  }
 
-  renderDraftReplies(draftReplies) {
-    if (!this.draftRepliesEl) return;
-    const keys = Object.keys(draftReplies);
-    if (!keys.length) {
-      this.draftRepliesEl.innerHTML = '<p class="muted">No draft replies.</p>';
-      return;
-    }
-    this.draftRepliesEl.innerHTML = keys
-      .map(
-        (id) =>
-          `<div class="template-block"><code>${FormattingUtils.escapeHtml(draftReplies[id])}</code></div>`
-      )
-      .join('');
+    const frag = document.createDocumentFragment();
+    deadlines.forEach((d) => {
+      const emailId = d && d.email_id ? FormattingUtils.escapeHtml(String(d.email_id)) : null;
+      const date = d && (d.deadline || d.date) ? FormattingUtils.escapeHtml(String(d.deadline || d.date)) : '';
+      const desc = d && (d.description || d.task) ? FormattingUtils.escapeHtml(String(d.description || d.task)) : '';
+
+      const node = document.createElement('div');
+      node.className = 'insight-item';
+      if (emailId) {
+        node.innerHTML = `⏰ ${emailId} — ${date || desc}`;
+      } else {
+        node.innerHTML = `⏰ ${desc || date}`;
+      }
+      frag.appendChild(node);
+    });
+
+    this.deadlinesEl.appendChild(frag);
   }
 }

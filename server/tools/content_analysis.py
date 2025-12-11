@@ -1,64 +1,61 @@
-
+# server/tools/content_analysis.py
+import logging
 from typing import Dict, Any, List
 from .base import BaseTool
 
+logger = logging.getLogger(__name__)
+
+
 class ContentAnalysisTool(BaseTool):
-    name = "content_analysis"
+    name = "content"
 
     def __init__(self):
+        # Только summary — никаких других полей
         schema = {
-            "summary": "string",
-            "key_tasks": [{"email_id": "string", "task": "string"}],
-            "deadlines": [{"email_id": "string", "deadline": "string"}],
-            "draft_reply": {"string": "string"}  # email_id -> reply_text
+            "summary": ""
         }
-        super().__init__(schema=schema)
+        super().__init__(schema=schema, tool_name=self.name)
 
     async def run(
         self,
         messages: List[Dict[str, Any]],
-        user_query: str,
+        user_query: str = "Summarize these emails.",
         user_language: str = "English"
     ) -> Dict[str, Any]:
-        prompt = (
-            f"You are an agent for email content analysis.\n"
-            f"Task: {user_query}\n\n"
-            f"Output strictly valid JSON matching the schema.\n"
-            f"Language: {user_language}\n\n"
-            f"Rules:\n"
-            f"- Summarize only actual content from provided emails.\n"
-            f"- Identify key points and extract actionable tasks only if explicit.\n"
-            f"- Extract deadlines only if explicitly present.\n"
-            f"- Return:\n"
-            f"  - summary: short overview.\n"
-            f"  - key_tasks: list of objects {{email_id, task}}.\n"
-            f"  - deadlines: list of objects {{email_id, deadline}}.\n"
-            f"  - draft_reply: dictionary of {{email_id: short_reply}}; if no per-email replies, include a single {{\"generic\": reply}}.\n\n"
-            f"Emails:\n{messages}"
-        )
 
-        # Вызов модели через BaseTool.call — строго через variables
+        prompt = f"""
+You are a summarization tool.
+
+YOUR ONLY TASK:
+- Produce a clean, concise summary of the provided emails.
+- DO NOT extract tasks.
+- DO NOT extract deadlines.
+- DO NOT extract key points.
+- DO NOT classify or filter emails.
+- DO NOT add recommendations.
+- DO NOT mention tools or meta-information.
+
+Output strictly valid JSON:
+{{
+  "summary": "string"
+}}
+
+Emails:
+{messages}
+"""
+
         result = await self.call(
             prompt,
-            variables={"query": user_query, "messages": messages},
+            variables={"messages": messages, "query": user_query},
             user_language=user_language
         )
 
         # Defensive normalization
         if not isinstance(result, dict):
-            result = {}
-        result.setdefault("summary", "")
-        result.setdefault("key_tasks", [])
-        result.setdefault("deadlines", [])
+            return {"summary": ""}
 
-        dr = result.get("draft_reply")
-        if isinstance(dr, str):
-            result["draft_reply"] = {"generic": dr}
-        elif not isinstance(dr, dict):
-            result["draft_reply"] = {"generic": (
-                "Спасибо за информацию. Ознакомлюсь и отвечу позже."
-                if user_language.lower().startswith("rus")
-                else "Thank you for the information. I will review and follow up."
-            )}
+        summary = result.get("summary", "")
+        if not isinstance(summary, str):
+            summary = str(summary)
 
-        return result
+        return {"summary": summary}
