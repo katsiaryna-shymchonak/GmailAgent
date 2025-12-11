@@ -1,0 +1,60 @@
+name: Build and Push Docker Image to GHCR
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAMESPACE: ghcr.io/${{ github.repository_owner }}
+      IMAGE_NAME: ai-gmail-agent
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Compute image name
+        run: |
+          echo "IMAGE=${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}" >> $GITHUB_ENV
+
+      - name: Get short SHA
+        id: meta
+        run: |
+          echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build image
+        run: |
+          docker build -f Dockerfile \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${{ steps.meta.outputs.SHORT_SHA }}" \
+            .
+
+      - name: Push image
+        run: |
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${{ steps.meta.outputs.SHORT_SHA }}"
+
+      - name: Output pushed image
+        run: |
+          echo "Pushed: ${IMAGE}:latest"

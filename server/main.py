@@ -1,13 +1,15 @@
 # server/main.py
+import os
+import logging
 from dotenv import load_dotenv
 
-load_dotenv("server/.env")  # or ".env" if the file is in project root
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
 
 from .api import create_app
 
 app = create_app()
-
-import logging
 
 logging.basicConfig(
     level=logging.DEBUG,
