@@ -1,5 +1,9 @@
 from typing import Dict, Any, List
+import json
+import ast
+
 from .base import BaseTool
+
 
 class AutoReplyTool(BaseTool):
     name = "auto_reply"
@@ -9,6 +13,8 @@ class AutoReplyTool(BaseTool):
             "auto_replies": [{"id": "int", "template": "string"}]
         }
         super().__init__(schema=schema)
+
+    # ---------- Внутренние утилиты ----------
 
     def _is_generic_thanks(self, text: str) -> bool:
         """Определяем слишком общий ответ типа 'спасибо'."""
@@ -22,9 +28,11 @@ class AutoReplyTool(BaseTool):
         tags = " ".join(email.get("tags", [])).lower()
         action = (email.get("recommended_action") or "").lower()
 
-        if "privacy" in subject or "terms" in subject or "политика" in subject or "условия" in subject:
+        if any(k in subject for k in ["privacy", "terms"]) or any(k in subject for k in ["политика", "условия"]):
             return "policy_update"
-        if "invite" in subject or "webinar" in subject or "event" in subject or "мастер-класс" in body or "марафон" in body:
+        if any(k in subject for k in ["invite", "webinar", "event"]) or any(
+            k in body for k in ["мастер-класс", "марафон"]
+        ):
             return "event_invite"
         if "discount" in subject or "black friday" in subject or "скидк" in body or "акция" in tags:
             return "promotion"
@@ -38,7 +46,7 @@ class AutoReplyTool(BaseTool):
 
     def _fallback_template(self, kind: str, lang: str) -> str:
         """Контекстные fallback‑шаблоны."""
-        ru = lang.lower().startswith("rus")
+        ru = lang.lower().startswith("rus") or "ru" in lang.lower()
         if kind == "promotion":
             return "Получил предложение. Пришлите краткое резюме условий и срок действия акции." if ru \
                 else "Received the offer. Please share a brief summary of terms and validity."
@@ -60,48 +68,132 @@ class AutoReplyTool(BaseTool):
         return "Получил сообщение. Пришлите ключевые моменты и требуемые действия." if ru \
             else "Received your message. Please share key points and required actions."
 
+    def _repair_json(self, raw: Any) -> Dict[str, Any]:
+        """
+        Универсальный JSON‑repair:
+        - если модель вернула уже dict — вернём как есть;
+        - если строка — вырежем JSON‑объект, попробуем json.loads, потом ast.literal_eval;
+        - иначе вернём пустой словарь.
+        """
+        if isinstance(raw, dict):
+            return raw
+        if not isinstance(raw, str):
+            return {}
+
+        text = raw.strip()
+        if not text:
+            return {}
+
+        # Вырезаем по первой и последней фигурной скобке — защита от markdown/лишнего текста
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            text = text[start:end]
+        except Exception:
+            # если не нашли фигурные скобки — оставляем как есть
+            pass
+
+        # 1) Пытаемся json.loads
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+
+        # 2) Пытаемся literal_eval для Python-словарей "{'a': 1}"
+        try:
+            val = ast.literal_eval(text)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+
+        return {}
+
+    def _extract_template_from_nested(self, tmpl: str) -> str:
+        """
+        Если модель вернула строку вида:
+        "{'id': 1, 'template': '...'}"
+        — пытаемся распарсить и вытащить поле template.
+        """
+        text = (tmpl or "").strip()
+        if not (text.startswith("{") and text.endswith("}")):
+            return text
+
+        try:
+            parsed = ast.literal_eval(text)
+            if isinstance(parsed, dict) and "template" in parsed:
+                inner = parsed["template"]
+                return (inner or "").strip()
+        except Exception:
+            pass
+
+        return text
+
+    # ---------- Основной метод ----------
+
     async def run(
         self,
         messages: List[Dict[str, Any]],
         filter_data: Dict[str, Any],
         user_language: str = "English"
     ) -> Dict[str, Any]:
+        """
+        Генерация автоответов:
+        - жёсткий промпт на JSON;
+        - repair + нормализация;
+        - fallback‑шаблоны для пустых/слишком общих ответов.
+        """
+
         prompt = (
-            f"You are an agent for auto-reply generation.\n"
-            f"Task: Create polite, concise, CONTEXTUAL auto-reply templates for the provided emails.\n\n"
-            f"Output strictly valid JSON matching the schema.\n"
-            f"Language: {user_language}\n\n"
-            f"Rules:\n"
-            f"- For EACH email with an integer-like id, produce ONE object {{id, template}}.\n"
-            f"- Place ALL objects inside the 'auto_replies' array.\n"
-            f"- Do NOT merge multiple replies into one text block.\n"
-            f"- Templates must be short (1–2 sentences), professional, and relevant.\n"
-            f"- Avoid generic 'thank you' replies; tailor to the email type.\n"
-            f"- If promotion/discount: ask for summary/validity/pricing.\n"
-            f"- If event invite/webinar: ask for agenda/timing/recording.\n"
-            f"- If policy update: confirm if action is required.\n"
-            f"- If technical tool/docs: ask for quick-start guide or key benefits.\n"
-            f"- If task/deadline: confirm and request deadline/criteria.\n"
-            f"- If newsletter/digest: ask for key points or preference center.\n"
-            f"- If unclear: request a brief summary and required actions.\n\n"
-            f"Emails:\n{messages}\n\n"
-            f"Filter data:\n{filter_data}"
+            "You are an AI agent that generates contextual auto-reply templates for emails.\n\n"
+            "Your ONLY task:\n"
+            "Return a STRICTLY VALID JSON object with the following structure:\n\n"
+            "{\n"
+            '  "auto_replies": [\n'
+            "    {\n"
+            '      "id": <integer>,\n'
+            '      "template": "<string>"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "CRITICAL RULES:\n"
+            "- Output MUST be valid JSON. No comments, no trailing commas, no Python syntax.\n"
+            '- \"template\" MUST be a plain string. Do NOT embed JSON, Python dicts, or objects inside it.\n'
+            '- Do NOT wrap objects inside strings (e.g. no \"{\'id\': 1, \'template\': \'...\' }\").\n'
+            "- Do NOT include braces { } inside \"template\" unless they are literal text.\n"
+            "- Each email with an integer-like id produces exactly ONE object {id, template}.\n"
+            "- The \"id\" MUST match the email id.\n"
+            "- Templates must be short (1–2 sentences), polite, contextual, and professional.\n"
+            "- Avoid generic 'thank you' replies unless clearly appropriate.\n"
+            "- If the email is unclear: ask for key points and required actions.\n"
+            "- If promotion/discount: ask for summary, validity period, and key conditions.\n"
+            "- If event invite/webinar: ask for agenda, timing, and recording availability.\n"
+            "- If policy update: confirm whether any action is required.\n"
+            "- If technical/tooling/docs: ask for a quick-start guide or key benefits.\n"
+            "- If task/deadline: confirm, and request deadline and acceptance criteria.\n"
+            "- If newsletter/digest: ask for key points or preference options.\n\n"
+            f"Language for templates: {user_language}\n\n"
+            "Emails (JSON):\n"
+            f"{json.dumps(messages, ensure_ascii=False, indent=2)}\n\n"
+            "Filter data (JSON):\n"
+            f"{json.dumps(filter_data, ensure_ascii=False, indent=2)}\n\n"
+            "Remember: STRICT JSON ONLY. NO explanations. NO markdown. NO text outside the JSON object."
         )
 
-        result = await self.call(
+        raw_result = await self.call(
             prompt,
             variables={"messages": messages, "filter_data": filter_data},
-            user_language=user_language
+            user_language=user_language,
         )
 
-        # --- Защитная нормализация ---
-        if not isinstance(result, dict):
-            result = {}
+        result = self._repair_json(raw_result)
+
         auto_replies = result.get("auto_replies")
         if not isinstance(auto_replies, list):
             auto_replies = []
 
-        normalized = []
+        normalized: List[Dict[str, Any]] = []
+
         for idx, item in enumerate(auto_replies):
             if isinstance(item, dict):
                 try:
@@ -112,6 +204,9 @@ class AutoReplyTool(BaseTool):
             else:
                 _id = idx + 1
                 tmpl = str(item).strip()
+
+            # если template — вложенный dict в строке → распакуем
+            tmpl = self._extract_template_from_nested(tmpl)
 
             # если шаблон пустой или слишком общий — заменим на контекстный
             if not tmpl or self._is_generic_thanks(tmpl):
