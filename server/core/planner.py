@@ -1,4 +1,4 @@
-# server/core/plan_builder.py
+# server/core/planner.py
 import logging
 from typing import List
 from langchain.prompts import PromptTemplate
@@ -38,17 +38,52 @@ class PlanBuilder:
         else:
             # --- LLM-based planner (fallback when heuristics don't match) ---
             prompt = PromptTemplate.from_template(
+                    """
+                You are a planning module for an email‑analysis agent.
+
+                Your job is to decide which tools to run based on the user query.
+                You may choose ONE tool or MULTIPLE tools in a meaningful order.
+
+                Available tools and their purposes:
+
+                1) filter  
+                   - Extracts structured metadata from emails (priority, tags, actions).
+                   - Should run BEFORE newsletter or auto if they are used.
+                   - Use when the user asks to sort, filter, classify, find important/urgent emails.
+
+                2) newsletter  
+                   - Analyzes newsletters: digest, unsubscribe suggestions, keep suggestions.
+                   - Use when the user asks about newsletters, subscriptions, digests, spammy mailings.
+
+                3) content  
+                   - Produces summaries, explanations, overviews, or general analysis.
+                   - Use when the user wants a summary, explanation, or general understanding.
+
+                4) auto  
+                   - Generates reply drafts or suggested responses.
+                   - Use when the user wants to reply, respond, write a message, or draft an email.
+                   - Must run AFTER filter if both are used.
+
+                5) key_points  
+                   - Extracts key bullet points from emails.
+                   - Use when the user asks for key points, main ideas, bullet points, highlights.
+
+                6) deadlines  
+                   - Extracts deadlines, due dates, submission times.
+                   - Use when the user asks about deadlines, due dates, schedules, or time‑sensitive tasks.
+
+                General rules:
+                - You may choose multiple tools if the query requires multiple types of analysis.
+                - Order matters: filter → content → key_points → deadlines → auto → newsletter (as needed).
+                - If the user asks for several things (e.g., summary + deadlines), include all relevant tools.
+                - If the query is ambiguous, choose the minimal reasonable set of tools.
+                - Return ONLY a CSV string with tool names in execution order.
+
+                User query: "{query}"
+
+                Format example: filter,content,key_points
                 """
-You are a planner for the mail agent.
-Available tools: filter, newsletter, content, auto, key_points, deadlines.
 
-Task: decide which tools to run and in what order based on the user query.
-Return ONLY a CSV string with tool names in execution order.
-
-User query: "{query}"
-
-Format example: filter,content,key_points
-"""
             )
             formatted = prompt.format(query=query)
             logger.debug("PlanBuilder prompt:\n%s", formatted)

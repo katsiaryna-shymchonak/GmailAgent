@@ -39,6 +39,9 @@ class DeadlineTool(BaseTool):
         prompt = f"""
 You are a strict extractor of deadlines from email content.
 
+LANGUAGE REQUIREMENT:
+- Respond strictly in {user_language}.
+
 REQUIREMENTS:
 - You MUST output ONLY valid JSON and ONLY the fields in the schema below.
 - For every deadline you extract, you MUST include the original email's 'id' as "email_id".

@@ -18,9 +18,8 @@ export class App {
     this.lastSelectedMessagesDetails = [];
     this.lastAgentInsights = null;
     this.activeSenderKey = '';
-    this.sessionId = 'default'; // current session key for active emails
+    this.sessionId = 'default';
     this.spinner = null;
-    this.init();
   }
 
   init() {
@@ -43,7 +42,6 @@ export class App {
       'key-points-content',
       'key-tasks-content',
       'deadlines-content',
-      // draft-replies-content intentionally removed
       'spinner',
       'send-to-ai',
       'select-last-week-btn',
@@ -61,15 +59,19 @@ export class App {
     }
 
     this.themeManager = new ThemeManager(document.getElementById('theme-toggle'));
-    this.senderList = new SenderList(document.getElementById('sender-list'), (senderEmail) =>
-      this.onSenderSelect(senderEmail)
+
+    this.senderList = new SenderList(
+      document.getElementById('sender-list'),
+      (senderEmail) => this.onSenderSelect(senderEmail)
     );
+
     this.emailList = new EmailList(
       document.getElementById('email-list'),
       document.getElementById('detail-panel'),
       (count) => this.onEmailSelectionChange(count),
       { pageSize: 6 }
     );
+
     this.conversationPanel = new ConversationPanel(
       document.getElementById('conversation-panel'),
       document.getElementById('conversation-toggle'),
@@ -78,6 +80,8 @@ export class App {
       document.getElementById('conversation-input'),
       document.getElementById('conversation-send')
     );
+
+    // InsightsPanel создаётся ТОЛЬКО после DOMContentLoaded
     this.insightsPanel = new InsightsPanel(
       document.getElementById('filter-content'),
       document.getElementById('newsletter-content'),
@@ -86,6 +90,7 @@ export class App {
     );
 
     this.spinner = document.getElementById('spinner');
+
     this.setupEventListeners();
     this.senderList.load();
   }
@@ -101,16 +106,19 @@ export class App {
         this.emailList.prevPage();
         this.emailList.updatePaginationControls();
       });
+
     if (nextBtn)
       nextBtn.addEventListener('click', () => {
         this.emailList.nextPage();
         this.emailList.updatePaginationControls();
       });
-    if (sendToAiBtn) sendToAiBtn.addEventListener('click', () => this.sendSelectedToAi());
+
+    if (sendToAiBtn)
+      sendToAiBtn.addEventListener('click', () => this.sendSelectedToAi());
+
     if (selectLastWeekBtn)
       selectLastWeekBtn.addEventListener('click', () => this.selectLastWeekMessages());
 
-    // safe-guard: ensure conversationPanel.sendBtn exists
     if (this.conversationPanel && this.conversationPanel.sendBtn) {
       this.conversationPanel.sendBtn.addEventListener('click', async () => {
         const query = this.conversationPanel.getInputValue();
@@ -123,6 +131,7 @@ export class App {
     this.activeSenderKey = senderEmail;
     this.emailList.clearSelection();
     DOMUtils.setListLoading(this.spinner, true);
+
     GmailService.searchMessagesBySender(senderEmail, 20)
       .then((messages) => {
         this.emailList.render(messages);
@@ -147,33 +156,31 @@ export class App {
 
     const sendToAiBtn = document.getElementById('send-to-ai');
     if (sendToAiBtn) sendToAiBtn.disabled = true;
-    if (this.conversationPanel) this.conversationPanel.setSendEnabled(false);
+
     if (this.conversationPanel) {
+      this.conversationPanel.setSendEnabled(false);
       this.conversationPanel.appendEntry('System', 'Preparing selected emails...');
       this.conversationPanel.open();
     }
 
     DOMUtils.setListLoading(this.spinner, true);
+
     try {
       const messages = await this.emailList.gatherSelectedMessages();
       this.lastSelectedMessagesDetails = messages;
 
-      // sessionId is the key used to store active emails on the backend
-      this.sessionId = FormattingUtils.parseSenderEmail(this.activeSenderKey) || 'default';
+      this.sessionId =
+        FormattingUtils.parseSenderEmail(this.activeSenderKey) || 'default';
 
-      if (this.conversationPanel) this.conversationPanel.appendEntry('System', 'Analyzing with AI agent...');
+      if (this.conversationPanel)
+        this.conversationPanel.appendEntry('System', 'Analyzing with AI agent...');
 
-      // call initialSummary with sessionId (backend treats it as session key)
       const data = await this.apiClient.initialSummary(messages, this.sessionId);
 
-      // update UI and store last insights
       this.renderAgentResponse(data);
     } catch (error) {
       let errorMsg = error.message || 'Failed to contact AI agent.';
-      if (
-        error.message &&
-        (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))
-      ) {
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
         errorMsg = 'Cannot reach backend. Is the server running?';
       }
       if (this.conversationPanel) this.conversationPanel.appendEntry('Error', errorMsg);
@@ -182,31 +189,34 @@ export class App {
       DOMUtils.setListLoading(this.spinner, false);
       if (sendToAiBtn) sendToAiBtn.disabled = this.emailList.getSelectedIds().size === 0;
       if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
-      if (this.conversationPanel) this.conversationPanel.setInputPlaceholder('Ask a follow-up question...');
+      if (this.conversationPanel)
+        this.conversationPanel.setInputPlaceholder('Ask a follow-up question...');
     }
   }
 
   async sendFollowUp(query) {
     if (!query) return;
-    if (this.conversationPanel) this.conversationPanel.setSendEnabled(false);
-    if (this.conversationPanel) this.conversationPanel.appendEntry('You', query);
-    if (this.conversationPanel) this.conversationPanel.clearInput();
+
+    if (this.conversationPanel) {
+      this.conversationPanel.setSendEnabled(false);
+      this.conversationPanel.appendEntry('You', query);
+      this.conversationPanel.clearInput();
+    }
 
     DOMUtils.setListLoading(this.spinner, true);
-    try {
-      // Use session id so backend loads active emails from DB.
-      const sessionId = this.sessionId || FormattingUtils.parseSenderEmail(this.activeSenderKey) || 'default';
 
-      // call followUp with query and sessionId only (no messages)
+    try {
+      const sessionId =
+        this.sessionId ||
+        FormattingUtils.parseSenderEmail(this.activeSenderKey) ||
+        'default';
+
       const data = await this.apiClient.followUp(query, sessionId);
 
       this.renderAgentResponse(data);
     } catch (error) {
       let errorMsg = error.message || 'Failed to contact AI agent.';
-      if (
-        error.message &&
-        (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))
-      ) {
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
         errorMsg = 'Cannot reach backend. Is the server running?';
       }
       if (this.conversationPanel) this.conversationPanel.appendEntry('Error', errorMsg);
@@ -226,18 +236,28 @@ export class App {
     }
 
     DOMUtils.setListLoading(this.spinner, true);
+
     try {
       const messages = await GmailService.getWeeklyMessages(500);
+
       if (messages.length === 0) {
-        if (this.conversationPanel) this.conversationPanel.appendEntry('System', 'No emails found for last week.');
+        if (this.conversationPanel)
+          this.conversationPanel.appendEntry('System', 'No emails found for last week.');
         if (this.conversationPanel) this.conversationPanel.setSendEnabled(true);
         return;
       }
-      if (this.conversationPanel) this.conversationPanel.appendEntry('System', `Loaded ${messages.length} emails. Displaying in list...`);
+
+      if (this.conversationPanel)
+        this.conversationPanel.appendEntry(
+          'System',
+          `Loaded ${messages.length} emails. Displaying in list...`
+        );
+
       this.emailList.render(messages);
       this.emailList.updatePaginationControls();
     } catch (error) {
-      if (this.conversationPanel) this.conversationPanel.appendEntry('Error', error.message || 'Failed to load emails.');
+      if (this.conversationPanel)
+        this.conversationPanel.appendEntry('Error', error.message || 'Failed to load emails.');
       console.error('selectLastWeekMessages error:', error);
     } finally {
       DOMUtils.setListLoading(this.spinner, false);
@@ -252,7 +272,6 @@ export class App {
       this.conversationPanel.appendEntry('Agent', safe.summary, summarizeToolUsage(safe));
     }
 
-    // Ensure insights panel is updated with the full response
     if (this.insightsPanel) {
       try {
         this.insightsPanel.update(safe);
@@ -264,3 +283,9 @@ export class App {
     this.lastAgentInsights = safe;
   }
 }
+
+// создаём App только после DOMContentLoaded
+window.addEventListener('DOMContentLoaded', () => {
+  window.app = new App();
+  window.app.init();
+});

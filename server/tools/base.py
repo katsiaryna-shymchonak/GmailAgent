@@ -5,7 +5,8 @@ import json
 import time
 from typing import Dict, Any
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+# Requires: pip install langchain-groq
+from langchain_groq import ChatGroq
 from ..config.settings import get_settings
 from ..metrics.llm_counters import incr_call, log_snapshot
 from ..metrics.prometheus_metrics import record_call
@@ -15,16 +16,17 @@ settings = get_settings()
 
 
 class BaseTool:
-    """Base class for all tools: robust LLM invocation, strict JSON parsing,
+    """Base class for all tools: robust LLM invocation via Groq, strict JSON parsing,
     and LLM call metrics (in-process + Prometheus)."""
 
     def __init__(self, schema: Dict[str, Any], tool_name: str = "generic"):
         self.schema = schema
         self.tool_name = tool_name
 
-        self.model = ChatGoogleGenerativeAI(
-            google_api_key=settings.gemini_api_key,
-            model=settings.gemini_model,
+        # Initializing ChatGroq
+        self.model = ChatGroq(
+            groq_api_key=settings.groq_api_key,
+            model_name=settings.groq_model,
             temperature=0.3,
             max_retries=2
         )
@@ -39,19 +41,17 @@ class BaseTool:
         await incr_call(self.tool_name, success=None)  # mark started
 
         try:
-            # Try keyword 'input' first
+            # Groq/LangChain invocation
             try:
-                raw = await asyncio.wait_for(self.model.ainvoke(input=prompt), timeout=self.timeout)
+                # Try standard invocation
+                raw = await asyncio.wait_for(self.model.ainvoke(prompt), timeout=self.timeout)
             except TypeError:
-                # Try positional string
-                try:
-                    raw = await asyncio.wait_for(self.model.ainvoke(prompt), timeout=self.timeout)
-                except TypeError:
-                    # Try agenerate-style (langchain-like)
-                    raw = await asyncio.wait_for(
-                        self.model.agenerate(messages=[[{"role": "user", "content": prompt}]]),
-                        timeout=self.timeout,
-                    )
+                # Fallback for older interface versions
+                raw = await asyncio.wait_for(
+                    self.model.agenerate(messages=[[{"role": "user", "content": prompt}]]),
+                    timeout=self.timeout,
+                )
+
             duration = time.monotonic() - start
             # success metrics
             await incr_call(self.tool_name, success=True)
@@ -67,10 +67,10 @@ class BaseTool:
         except Exception as e:
             duration = time.monotonic() - start
             await incr_call(self.tool_name, success=False)
-            # classify resource/quota errors as 'rate_limited' if message contains 429/ResourceExhausted
+            # classify resource/quota errors
             status = "error"
             msg = str(e).lower()
-            if "quota" in msg or "resourceexhausted" in msg or "429" in msg:
+            if "rate limit" in msg or "429" in msg or "quota" in msg:
                 status = "rate_limited"
             record_call(self.tool_name, status, duration)
             logger.error("LLM call failed (tool=%s): %s", self.tool_name, e)
@@ -95,6 +95,7 @@ class BaseTool:
                 pass
 
         try:
+            # Handle generations list if present
             gens = getattr(raw, "generations", None)
             if gens and isinstance(gens, list) and len(gens) > 0:
                 first = gens[0]
@@ -120,10 +121,10 @@ class BaseTool:
             return ""
 
     async def call(
-        self,
-        prompt: str,
-        variables: Dict[str, Any] = None,
-        user_language: str = "English"
+            self,
+            prompt: str,
+            variables: Dict[str, Any] = None,
+            user_language: str = "English"
     ) -> Dict[str, Any]:
         """Call the model, parse JSON strictly, and return a dict matching the schema."""
         variables = variables or {}
@@ -140,21 +141,44 @@ class BaseTool:
 
             cleaned = str(text).strip()
 
+            # Clean markdown code blocks often returned by Llama models
             if cleaned.startswith("```"):
-                cleaned = cleaned.strip("`")
-                if cleaned.lower().startswith("json"):
-                    cleaned = cleaned[4:].strip()
+                # Remove first line (e.g., ```json) and last line (```)
+                lines = cleaned.splitlines()
+                if len(lines) >= 2:
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    cleaned = "\n".join(lines).strip()
+                else:
+                    cleaned = cleaned.strip("`")  # Fallback for single line code blocks
 
             try:
                 result = json.loads(cleaned)
             except json.JSONDecodeError:
                 logger.warning("LLM returned non-JSON, wrapping into summary (tool=%s)", self.tool_name)
-                if "summary" in self.schema:
-                    fallback = {k: ([] if isinstance(v, list) else ({} if isinstance(v, dict) else "")) for k, v in self.schema.items()}
-                    fallback["summary"] = cleaned
-                    logger.debug("BaseTool FILTERED RESULT keys=%s", list(fallback.keys()))
-                    return fallback
-                return {"summary": cleaned}
+                # Attempt to find JSON substring if mixed with text
+                start_idx = cleaned.find('{')
+                end_idx = cleaned.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    try:
+                        possible_json = cleaned[start_idx:end_idx + 1]
+                        result = json.loads(possible_json)
+                    except json.JSONDecodeError:
+                        if "summary" in self.schema:
+                            fallback = {k: ([] if isinstance(v, list) else ({} if isinstance(v, dict) else "")) for k, v
+                                        in self.schema.items()}
+                            fallback["summary"] = cleaned
+                            return fallback
+                        return {"summary": cleaned}
+                else:
+                    if "summary" in self.schema:
+                        fallback = {k: ([] if isinstance(v, list) else ({} if isinstance(v, dict) else "")) for k, v in
+                                    self.schema.items()}
+                        fallback["summary"] = cleaned
+                        return fallback
+                    return {"summary": cleaned}
 
             if not isinstance(result, dict):
                 raise ValueError("Invalid JSON structure: expected object at top level")

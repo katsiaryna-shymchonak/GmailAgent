@@ -1,4 +1,3 @@
-# server/tools/key_points.py
 import logging
 from typing import Dict, Any, List
 from .base import BaseTool
@@ -10,6 +9,7 @@ class KeyPointsTool(BaseTool):
     name = "key_points"
 
     def __init__(self):
+        # Расширенная схема для поддержки ключевых задач
         schema = {
             "summary": "",
             "key_points": [
@@ -18,46 +18,50 @@ class KeyPointsTool(BaseTool):
                     "points": [""],
                 }
             ],
+            "key_tasks": [
+                {
+                    "email_id": "",
+                    "task": "",
+                }
+            ],
         }
-        # pass tool_name so metrics and logs can attribute calls
         super().__init__(schema=schema, tool_name=self.name)
 
     async def run(
-        self,
-        messages: List[Dict[str, Any]],
-        user_query: str = "Extract key points from each email.",
-        user_language: str = "English",
+            self,
+            messages: List[Dict[str, Any]],
+            user_query: str = "Extract key points and tasks from each email.",
+            user_language: str = "English",
     ) -> Dict[str, Any]:
         """
-        Extracts key bullet points per email.
-        Returns:
-          {
-            "summary": "string",
-            "key_points": [{"email_id": "string", "points": ["string"]}, ...]
-          }
+        Извлекает ключевые тезисы и конкретные задачи (actions) из каждого письма.
         """
-        # Ensure messages are passed as JSON-friendly structure
         prompt = f"""
-You are a tool that extracts key points from emails.
+You are a tool that extracts key points and key tasks (action items) from emails.
+
+LANGUAGE REQUIREMENT:
+- Respond strictly in {user_language}.
+
+YOUR TASKS:
+1. Extract key bullet points summarizing the main information.
+2. Identify specific tasks, requests, or action items that the user needs to perform.
 
 IMPORTANT:
-- You MUST ignore any concepts related to filtering, tagging, prioritization, spam detection, newsletters, auto-replies, or any other tools.
-- You MUST NOT perform filtering, classification, tagging, or prioritization.
-- You MUST NOT return fields such as: priority, tags, recommended_action, email_type, unsubscribe, keep, auto_replies, filter_results.
-- You MUST ONLY produce the fields defined in the schema below.
+- Focus only on content. Do not perform filtering or classification.
+- Output strictly valid JSON matching the schema below.
 
-Your ONLY task:
-Extract key bullet points from each email.
-
-Output strictly valid JSON matching the schema:
+Output schema:
 {{
   "summary": "string",
   "key_points": [
     {{"email_id": "string", "points": ["string"]}}
+  ],
+  "key_tasks": [
+    {{"email_id": "string", "task": "string"}}
   ]
 }}
 
-Emails (each message is an object with at least an 'id' field):
+Emails:
 {messages}
 """
 
@@ -67,41 +71,33 @@ Emails (each message is an object with at least an 'id' field):
             user_language=user_language,
         )
 
-        # Defensive normalization
         if not isinstance(result, dict):
             result = {}
 
-        # Ensure summary is a string
-        if not isinstance(result.get("summary", ""), str):
-            result["summary"] = ""
-
-        # Normalize key_points into list of {email_id, points}
+        # Нормализация key_points
         raw_kp = result.get("key_points", [])
-        normalized_kp: List[Dict[str, Any]] = []
-
+        normalized_kp = []
         if isinstance(raw_kp, list):
             for idx, item in enumerate(raw_kp):
                 if isinstance(item, dict):
-                    email_id = item.get("email_id") or item.get("id") or f"email_{idx}"
-                    email_id = str(email_id)
-                    points = item.get("points", [])
-                    if isinstance(points, list):
-                        points = [str(p).strip() for p in points if p is not None and str(p).strip()]
-                    else:
-                        # If points is a single string/number, convert to list
-                        if isinstance(points, (str, int, float)):
-                            points = [str(points)]
-                        else:
-                            points = []
+                    eid = str(item.get("email_id") or item.get("id") or f"email_{idx}")
+                    pts = item.get("points", [])
+                    if isinstance(pts, list):
+                        pts = [str(p).strip() for p in pts if p]
+                        if pts:
+                            normalized_kp.append({"email_id": eid, "points": pts})
 
-                    if points:
-                        normalized_kp.append({"email_id": email_id, "points": points})
-                else:
-                    # If item is not dict, treat it as a single point for a synthetic id
-                    normalized_kp.append({"email_id": f"email_{idx}", "points": [str(item)]})
-        else:
-            # If model returned a single object or string, try to salvage
-            logger.debug("KeyPointsTool unexpected key_points shape: %r", raw_kp)
+        # Нормализация key_tasks (новое поле)
+        raw_kt = result.get("key_tasks", [])
+        normalized_kt = []
+        if isinstance(raw_kt, list):
+            for idx, item in enumerate(raw_kt):
+                if isinstance(item, dict):
+                    eid = str(item.get("email_id") or item.get("id") or f"task_{idx}")
+                    task = item.get("task") or ""
+                    if task:
+                        normalized_kt.append({"email_id": eid, "task": str(task)})
 
         result["key_points"] = normalized_kp
+        result["key_tasks"] = normalized_kt
         return result

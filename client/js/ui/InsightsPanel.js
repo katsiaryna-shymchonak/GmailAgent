@@ -235,32 +235,65 @@ export class InsightsPanel {
     });
     this.autoReplyEl.appendChild(frag);
   }
+renderKeyPoints(points) {
+  if (!this.keyPointsEl) return;
 
-  renderKeyPoints(points) {
-    if (!this.keyPointsEl) return;
-    this.keyPointsEl.innerHTML = '';
+  // Очищаем контейнер
+  this.keyPointsEl.innerHTML = '';
 
-    if (!points || !points.length) {
-      this.keyPointsEl.innerHTML = '<p class="muted">No key points.</p>';
-      return;
+  // Если вообще нет key_points — показываем заглушку
+  if (!points || !points.length) {
+    this.keyPointsEl.innerHTML = '<p class="muted">No key points.</p>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+
+  points.forEach((p, idx) => {
+    const id = p && p.email_id
+      ? FormattingUtils.escapeHtml(String(p.email_id))
+      : `email_${idx}`;
+
+    // Приводим points к массиву строк
+    let pts = [];
+    if (Array.isArray(p.points)) {
+      pts = p.points
+        .map((pt) => (pt != null ? String(pt).trim() : ''))
+        .filter((pt) => pt.length > 0);
+    } else if (typeof p.points === 'string') {
+      pts = p.points
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
 
-    const frag = document.createDocumentFragment();
-    points.forEach((p) => {
-      const id = p && p.email_id ? FormattingUtils.escapeHtml(String(p.email_id)) : 'email';
-      const pts = Array.isArray(p.points) ? p.points : this._toArray(p.points);
-      const listHtml = pts.length
-        ? `<ul>${pts.map((pt) => `<li>${FormattingUtils.escapeHtml(String(pt))}</li>`).join('')}</ul>`
-        : '<p class="muted">No extracted points.</p>';
+    // Создаём карточку
+    const wrapper = document.createElement('div');
+    wrapper.className = 'insight-item';
 
-      const wrapper = document.createElement('div');
-      wrapper.className = 'insight-item';
-      wrapper.innerHTML = `<strong>${id}</strong>${listHtml}`;
-      frag.appendChild(wrapper);
-    });
+    // Если нет points — рендерим пустой блок, но НЕ прерываем рендер остальных
+    if (!pts.length) {
+      wrapper.innerHTML = `
+        <strong>${id}</strong>
+        <p class="muted">No extracted points.</p>
+      `;
+    } else {
+      const listHtml = `<ul>${pts
+        .map((pt) => `<li>${FormattingUtils.escapeHtml(pt)}</li>`)
+        .join('')}</ul>`;
 
-    this.keyPointsEl.appendChild(frag);
-  }
+      wrapper.innerHTML = `
+        <strong>${id}</strong>
+        ${listHtml}
+      `;
+    }
+
+    frag.appendChild(wrapper);
+  });
+
+  this.keyPointsEl.appendChild(frag);
+}
+
 
   renderKeyTasks(tasks) {
     if (!this.keyTasksEl) return;

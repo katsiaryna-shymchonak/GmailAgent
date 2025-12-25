@@ -12,7 +12,8 @@
     "type": "module"
   },
   "oauth2": {
-    "client_id": "739930632604-maugqeb9q032vujskhga5cu2ka4cvvl4.apps.googleusercontent.com",
+    "client_id": "739930632604-1nr2siomor130m0a2bg2uc7carvcdvq0.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
   }
 }
+

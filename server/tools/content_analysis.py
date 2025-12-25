@@ -24,25 +24,22 @@ class ContentAnalysisTool(BaseTool):
     ) -> Dict[str, Any]:
 
         prompt = f"""
-You are a summarization tool.
+        You are a summarization tool.
 
-YOUR ONLY TASK:
-- Produce a clean, concise summary of the provided emails.
-- DO NOT extract tasks.
-- DO NOT extract deadlines.
-- DO NOT extract key points.
-- DO NOT classify or filter emails.
-- DO NOT add recommendations.
-- DO NOT mention tools or meta-information.
+        LANGUAGE REQUIREMENT:
+        - Respond strictly in {user_language}.
 
-Output strictly valid JSON:
-{{
-  "summary": "string"
-}}
+        YOUR ONLY TASK:
+        - Produce a clean summary of the provided emails.
 
-Emails:
-{messages}
-"""
+        Output strictly valid JSON:
+        {{
+          "summary": "string"
+        }}
+
+        Emails:
+        {messages}
+        """
 
         result = await self.call(
             prompt,

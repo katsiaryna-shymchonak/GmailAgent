@@ -12,12 +12,13 @@ psycopg[binary]==3.2.12
 psycopg-pool==3.2.3
 pgvector==0.3.5
 
-langchain==0.2.11
-langchain-core==0.2.23
-langchain-community==0.2.10
-langchain-google-genai==1.0.6
-google-generativeai==0.5.2
-
+# --- LLM & AI Frameworks ---
+langchain==0.2.14
+langchain-core==0.2.33
+langchain-community==0.2.12
+langchain-google-genai==1.0.8
+langchain-groq==0.1.9
+google-generativeai==0.7.2
 
 # --- Metrics ---
 prometheus-client==0.23.1

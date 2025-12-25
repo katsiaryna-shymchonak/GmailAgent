@@ -16,13 +16,15 @@ class PlanExecutor:
         content_tool,
         key_points_tool,
         auto_reply_tool,
-        capabilities_tip: str
+        deadline_tool,
+        capabilities_tip: str,
     ):
         self.filter_tool = filter_tool
         self.newsletter_tool = newsletter_tool
         self.content_tool = content_tool
         self.key_points_tool = key_points_tool
         self.auto_reply_tool = auto_reply_tool
+        self.deadline_tool = deadline_tool
         self.capabilities_tip = capabilities_tip
 
     async def run_plan(
@@ -30,11 +32,11 @@ class PlanExecutor:
         messages: List[Dict[str, Any]],
         plan: Sequence[str],
         query: str,
-        user_language: str = "English"
+        user_language: str = "English",
     ) -> Dict[str, Any]:
 
-        # ✅ Унифицированный ответ
-        response = {
+        # Унифицированный ответ
+        response: Dict[str, Any] = {
             "summary": "",
             "key_tasks": [],
             "deadlines": [],
@@ -63,33 +65,81 @@ class PlanExecutor:
             if isinstance(value, list):
                 for idx, v in enumerate(value):
                     if isinstance(v, dict):
-                        normalized.append({
-                            "id": v.get("id", str(idx + 1)),
-                            "subject": v.get("subject", ""),
-                            "body": v.get("body", ""),
-                            "tags": v.get("tags", []),
-                            "priority": v.get("priority", "low"),
-                            "recommended_action": v.get("recommended_action", "ignore"),
-                        })
+                        normalized.append(
+                            {
+                                "id": v.get("id", str(idx + 1)),
+                                "subject": v.get("subject", ""),
+                                "body": v.get("body", ""),
+                                "tags": v.get("tags", []),
+                                "priority": v.get("priority", "low"),
+                                "recommended_action": v.get(
+                                    "recommended_action", "ignore"
+                                ),
+                            }
+                        )
                     else:
-                        normalized.append({
-                            "id": str(idx + 1),
-                            "subject": "",
-                            "body": str(v),
-                            "tags": [],
-                            "priority": "low",
-                            "recommended_action": "ignore",
-                        })
+                        normalized.append(
+                            {
+                                "id": str(idx + 1),
+                                "subject": "",
+                                "body": str(v),
+                                "tags": [],
+                                "priority": "low",
+                                "recommended_action": "ignore",
+                            }
+                        )
             elif isinstance(value, str):
-                normalized.append({
-                    "id": "1",
-                    "subject": "",
-                    "body": value,
-                    "tags": [],
-                    "priority": "low",
-                    "recommended_action": "ignore",
-                })
+                normalized.append(
+                    {
+                        "id": "1",
+                        "subject": "",
+                        "body": value,
+                        "tags": [],
+                        "priority": "low",
+                        "recommended_action": "ignore",
+                    }
+                )
             return normalized
+
+        def _normalize_deadlines(value):
+            if not isinstance(value, list):
+                return []
+            out: List[Dict[str, Any]] = []
+            for idx, item in enumerate(value):
+                if isinstance(item, dict):
+                    email_id = item.get("email_id") or item.get("id") or f"deadline_{idx}"
+                    deadline = item.get("deadline") or ""
+                    reason = item.get("reason") or item.get("context") or ""
+                    if deadline:
+                        out.append(
+                            {
+                                "email_id": str(email_id),
+                                "deadline": str(deadline),
+                                "reason": str(reason),
+                            }
+                        )
+            return out
+
+        def _normalize_key_points(value):
+            if not isinstance(value, list):
+                return []
+            out: List[Dict[str, Any]] = []
+            for idx, item in enumerate(value):
+                if isinstance(item, dict):
+                    email_id = item.get("email_id") or item.get("id") or f"email_{idx}"
+                    points = item.get("points")
+                    if isinstance(points, list):
+                        pts = [str(p) for p in points if str(p).strip()]
+                    else:
+                        pts = _ensure_list(points)
+                    if pts:
+                        out.append(
+                            {
+                                "email_id": str(email_id),
+                                "points": pts,
+                            }
+                        )
+            return out
 
         # -----------------------------
         # FILTER TOOL
@@ -98,15 +148,25 @@ class PlanExecutor:
             logger.info("Running filter tool")
             start = time.time()
             try:
-                filter_result = await self.filter_tool.run(messages=messages, user_language=user_language)
-                emails_raw = filter_result.get("filter_results") or filter_result.get("emails") or []
+                filter_result = await self.filter_tool.run(
+                    messages=messages, user_language=user_language
+                )
+                emails_raw = (
+                    filter_result.get("filter_results")
+                    or filter_result.get("emails")
+                    or []
+                )
                 response["filter_results"] = _normalize_filtered_emails(emails_raw)
 
-                response["messages"].append({
-                    "role": "agent",
-                    "tool": self.filter_tool.name,
-                    "content": filter_result.get("summary", "Filtering complete."),
-                })
+                response["messages"].append(
+                    {
+                        "role": "agent",
+                        "tool": self.filter_tool.name,
+                        "content": filter_result.get(
+                            "summary", "Filtering complete."
+                        ),
+                    }
+                )
             except Exception as e:
                 logger.error("Filter tool failed: %s", e)
             logger.info("Filter completed in %.2fs", time.time() - start)
@@ -121,21 +181,25 @@ class PlanExecutor:
                 content_result = await self.content_tool.run(
                     messages=messages,
                     user_query=query,
-                    user_language=user_language
+                    user_language=user_language,
                 )
 
-                # ✅ Теперь content возвращает только summary
                 summary = content_result.get("summary", "")
                 if isinstance(summary, str) and summary.strip():
                     response["summary"] = summary.strip()
 
-                response["messages"].append({
-                    "role": "agent",
-                    "tool": self.content_tool.name,
-                    "content": response["summary"] or (
-                        "Анализ завершён." if user_language.lower().startswith("rus") else "Analysis complete."
-                    ),
-                })
+                response["messages"].append(
+                    {
+                        "role": "agent",
+                        "tool": self.content_tool.name,
+                        "content": response["summary"]
+                        or (
+                            "Анализ завершен."
+                            if user_language.lower().startswith("rus")
+                            else "Analysis complete."
+                        ),
+                    }
+                )
 
             except Exception as e:
                 logger.error("Content tool failed: %s", e)
@@ -158,9 +222,17 @@ class PlanExecutor:
                 # -----------------------------
                 if tool_name == "newsletter":
                     if not filter_result:
-                        filter_result = await self.filter_tool.run(messages=messages, user_language=user_language)
-                        emails_raw = filter_result.get("filter_results") or filter_result.get("emails") or []
-                        response["filter_results"] = _normalize_filtered_emails(emails_raw)
+                        filter_result = await self.filter_tool.run(
+                            messages=messages, user_language=user_language
+                        )
+                        emails_raw = (
+                            filter_result.get("filter_results")
+                            or filter_result.get("emails")
+                            or []
+                        )
+                        response["filter_results"] = _normalize_filtered_emails(
+                            emails_raw
+                        )
 
                     newsletter_result = await self.newsletter_tool.run(
                         messages=messages,
@@ -171,22 +243,34 @@ class PlanExecutor:
                     response["newsletter_insights"] = newsletter_result
 
                     digest_text = newsletter_result.get("digest") or (
-                        "Подготовлен дайджест." if user_language.lower().startswith("rus") else "Digest prepared."
+                        "Подготовлен дайджест."
+                        if user_language.lower().startswith("rus")
+                        else "Digest prepared."
                     )
-                    response["messages"].append({
-                        "role": "agent",
-                        "tool": self.newsletter_tool.name,
-                        "content": digest_text,
-                    })
+                    response["messages"].append(
+                        {
+                            "role": "agent",
+                            "tool": self.newsletter_tool.name,
+                            "content": digest_text,
+                        }
+                    )
 
                 # -----------------------------
                 # AUTO REPLY TOOL
                 # -----------------------------
                 elif tool_name == "auto":
                     if not filter_result:
-                        filter_result = await self.filter_tool.run(messages=messages, user_language=user_language)
-                        emails_raw = filter_result.get("filter_results") or filter_result.get("emails") or []
-                        response["filter_results"] = _normalize_filtered_emails(emails_raw)
+                        filter_result = await self.filter_tool.run(
+                            messages=messages, user_language=user_language
+                        )
+                        emails_raw = (
+                            filter_result.get("filter_results")
+                            or filter_result.get("emails")
+                            or []
+                        )
+                        response["filter_results"] = _normalize_filtered_emails(
+                            emails_raw
+                        )
 
                     auto_reply_result = await self.auto_reply_tool.run(
                         messages=messages,
@@ -210,11 +294,13 @@ class PlanExecutor:
                         if user_language.lower().startswith("rus")
                         else f"Prepared {len(response['auto_replies'])} auto-replies."
                     )
-                    response["messages"].append({
-                        "role": "agent",
-                        "tool": self.auto_reply_tool.name,
-                        "content": summary,
-                    })
+                    response["messages"].append(
+                        {
+                            "role": "agent",
+                            "tool": self.auto_reply_tool.name,
+                            "content": summary,
+                        }
+                    )
 
                 # -----------------------------
                 # KEY POINTS TOOL
@@ -227,18 +313,49 @@ class PlanExecutor:
                     )
 
                     kp = key_points_result.get("key_points", [])
-                    if isinstance(kp, list):
-                        response["key_points"].extend(kp)
+                    kp_norm = _normalize_key_points(kp)
+                    if kp_norm:
+                        response["key_points"].extend(kp_norm)
 
-                    response["messages"].append({
-                        "role": "agent",
-                        "tool": self.key_points_tool.name,
-                        "content": (
-                            "Ключевые пункты извлечены."
-                            if user_language.lower().startswith("rus")
-                            else "Key points extracted."
-                        ),
-                    })
+                    response["messages"].append(
+                        {
+                            "role": "agent",
+                            "tool": self.key_points_tool.name,
+                            "content": (
+                                "Ключевые пункты извлечены."
+                                if user_language.lower().startswith("rus")
+                                else "Key points extracted."
+                            ),
+                        }
+                    )
+
+                # -----------------------------
+                # DEADLINES TOOL
+                # -----------------------------
+                elif tool_name == "deadlines":
+                    deadlines_result = await self.deadline_tool.run(
+                        messages=messages,
+                        user_query=query,
+                        user_language=user_language,
+                    )
+
+                    dl = deadlines_result.get("deadlines", [])
+                    dl_norm = _normalize_deadlines(dl)
+                    if dl_norm:
+                        response["deadlines"].extend(dl_norm)
+
+                    summary = deadlines_result.get("summary") or (
+                        "Дедлайны извлечены."
+                        if user_language.lower().startswith("rus")
+                        else "Deadlines extracted."
+                    )
+                    response["messages"].append(
+                        {
+                            "role": "agent",
+                            "tool": self.deadline_tool.name,
+                            "content": summary,
+                        }
+                    )
 
                 logger.info("Tool %s completed in %.2fs", tool_name, time.time() - start)
 
@@ -249,21 +366,25 @@ class PlanExecutor:
                     if user_language.lower().startswith("rus")
                     else f"Sorry, the {tool_name} tool could not process the emails."
                 )
-                response["messages"].append({
-                    "role": "agent",
-                    "tool": tool_name,
-                    "content": fallback_msg,
-                })
+                response["messages"].append(
+                    {
+                        "role": "agent",
+                        "tool": tool_name,
+                        "content": fallback_msg,
+                    }
+                )
 
         # -----------------------------
         # FINALIZATION
         # -----------------------------
         if not response["messages"] and response["summary"]:
-            response["messages"].append({
-                "role": "agent",
-                "tool": "summary",
-                "content": response["summary"],
-            })
+            response["messages"].append(
+                {
+                    "role": "agent",
+                    "tool": "summary",
+                    "content": response["summary"],
+                }
+            )
 
         if not response["summary"] and response["messages"]:
             response["summary"] = response["messages"][-1]["content"]
