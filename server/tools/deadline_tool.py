@@ -1,5 +1,6 @@
 # server/tools/deadline_tool.py
 import logging
+import json
 from typing import Dict, Any, List
 from .base import BaseTool
 
@@ -16,7 +17,7 @@ class DeadlineTool(BaseTool):
                 {
                     "email_id": "",
                     "deadline": "",
-                    "reason": "",
+                    "description": "",
                 }
             ],
         }
@@ -28,14 +29,10 @@ class DeadlineTool(BaseTool):
         user_query: str = "Extract explicit deadlines from emails and attach email_id.",
         user_language: str = "English",
     ) -> Dict[str, Any]:
-        """
-        Extract explicit deadlines from emails. Each deadline entry MUST include:
-          - email_id: the original message 'id' field from the input messages
-          - deadline: extracted date/time string
-          - reason: short explanation or the sentence that contains the deadline
 
-        If no deadlines are found, return "deadlines": [].
-        """
+        # FIX: convert messages to proper JSON
+        emails_json = json.dumps(messages, ensure_ascii=False)
+
         prompt = f"""
 You are a strict extractor of deadlines from email content.
 
@@ -53,13 +50,15 @@ Output schema:
 {{
   "summary": "string",
   "deadlines": [
-    {{"email_id": "string", "deadline": "string", "reason": "string"}}
+    {{"email_id": "string", "deadline": "string", "description": "string"}}
   ]
 }}
 
-Emails (each message is an object and MUST include an 'id' field):
-{messages}
+Emails (JSON array, each object MUST include an 'id'):
+{emails_json}
 """
+
+        logger.info("DeadlineTool prompt prepared (len=%d)", len(prompt))
 
         result = await self.call(
             prompt,
@@ -67,9 +66,11 @@ Emails (each message is an object and MUST include an 'id' field):
             user_language=user_language,
         )
 
-        # Defensive normalization
+        logger.info("Raw LLM result (DeadlineTool): %s", result)
+
         if not isinstance(result, dict):
             result = {}
+
         result.setdefault("summary", "")
 
         raw_deadlines = result.get("deadlines", [])
@@ -80,24 +81,32 @@ Emails (each message is an object and MUST include an 'id' field):
                 if isinstance(item, dict):
                     email_id = item.get("email_id") or item.get("id")
                     deadline = item.get("deadline") or ""
-                    reason = item.get("reason") or item.get("context") or ""
-                    # If email_id is missing, try to match by content heuristics (not ideal)
+                    description = item.get("description") or item.get("context") or ""
+
                     if not email_id:
-                        # skip entries without explicit email_id to avoid fabricated links
-                        logger.debug("DeadlineTool skipping entry without email_id: %r", item)
+                        logger.info("DeadlineTool skipping entry without email_id: %r", item)
                         continue
+
                     if deadline:
                         normalized.append(
                             {
                                 "email_id": str(email_id),
                                 "deadline": str(deadline),
-                                "reason": str(reason),
+                                "description": str(description),
                             }
                         )
+                    else:
+                        logger.info("DeadlineTool skipping entry without deadline: %r", item)
                 else:
-                    logger.debug("DeadlineTool unexpected item type at index %d: %r", idx, item)
+                    logger.info("DeadlineTool unexpected item type at index %d: %r", idx, item)
         else:
-            logger.debug("DeadlineTool unexpected deadlines shape: %r", raw_deadlines)
+            logger.info("DeadlineTool unexpected deadlines shape: %r", raw_deadlines)
 
         result["deadlines"] = normalized
+
+        # Ensure summary is string
+        if not isinstance(result.get("summary"), str):
+            result["summary"] = ""
+
+        logger.info("Final result (DeadlineTool): %s", result)
         return result

@@ -1,5 +1,5 @@
 /**
- * Main Application Class
+ * Main Application Class client/js/core/App.js
  */
 import { ThemeManager } from '../ui/ThemeManager.js';
 import { SenderList } from '../ui/SenderList.js';
@@ -266,22 +266,29 @@ export class App {
   }
 
   renderAgentResponse(data) {
-    const safe = ensureDataShape(data);
+  // Логируем то, что реально пришло от бэка
+  console.log("Raw agent response from API:", data);
 
-    if (safe.summary && this.conversationPanel) {
-      this.conversationPanel.appendEntry('Agent', safe.summary, summarizeToolUsage(safe));
-    }
+  const safe = ensureDataShape(data);
 
-    if (this.insightsPanel) {
-      try {
-        this.insightsPanel.update(safe);
-      } catch (e) {
-        console.error('InsightsPanel.update failed:', e);
-      }
-    }
+  // Логируем то, что осталось после ensureDataShape
+  console.log("After ensureDataShape:", safe);
 
-    this.lastAgentInsights = safe;
+  if (safe.summary && this.conversationPanel) {
+    this.conversationPanel.appendEntry('Agent', safe.summary, summarizeToolUsage(safe));
   }
+
+  if (this.insightsPanel) {
+    try {
+      this.insightsPanel.update(safe);
+    } catch (e) {
+      console.error('InsightsPanel.update failed:', e);
+    }
+  }
+
+  this.lastAgentInsights = safe;
+}
+
 }
 
 // создаём App только после DOMContentLoaded

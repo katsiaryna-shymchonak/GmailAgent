@@ -1,6 +1,5 @@
 """Persistence utilities for AgentOrchestrator"""
 from typing import Any, Dict, List
-from server.services.database import store_email_memory
 
 
 def persist_memory(messages: List[Dict[str, Any]], filter_result: Dict[str, Any]) -> None:
@@ -40,6 +39,3 @@ def persist_memory(messages: List[Dict[str, Any]], filter_result: Dict[str, Any]
             "tags": item.get("tags"),
             "metadata": item,
         })
-
-    if records:
-        store_email_memory(records)

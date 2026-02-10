@@ -29,8 +29,7 @@ COPY server/ /app/server/
 ENV GROQ_API_KEY="" \
     GROQ_MODEL="llama-3.3-70b-versatile" \
     PG_DSN="" \
-    GEMINI_API_KEY="" \
-    EMBEDDING_MODEL="text-embedding-004"
+    GEMINI_API_KEY=""
 
 # Configure non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser \

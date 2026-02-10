@@ -31,10 +31,7 @@ class Settings(BaseSettings):
         description="Google Gemini API key for embeddings (optional if using other)",
         env="GEMINI_API_KEY",
     )
-    embedding_model: str = Field(
-        default="text-embedding-004",
-        env="EMBEDDING_MODEL",
-    )
+
 
     # Database / Memory storage
     pg_dsn: str = Field(..., env="PG_DSN")

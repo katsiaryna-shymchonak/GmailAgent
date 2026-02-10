@@ -25,7 +25,7 @@ jobs:
       # Step to create the extension archive in the root
       - name: Archive extension
         run: zip -r extension.zip manifest.json client/
-          
+
       # Upload the zip as an artifact so it can be downloaded from GitHub Actions UI
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
